@@ -1,48 +1,53 @@
 /**
- * API Route: /api/prompt
- * GET  — Ottieni prompt attivo
- * POST — Salva/aggiorna prompt
+ * api/prompt — Gestione del prompt di sistema dell'agente
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getPrompt, savePrompt } from '@/lib/store';
 
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const workspaceId = searchParams.get('workspaceId');
 
     if (!workspaceId) {
-      return NextResponse.json({ error: 'workspaceId obbligatorio' }, { status: 400 });
+      return NextResponse.json({ error: 'Workspace ID mancante' }, { status: 400 });
     }
 
     const prompt = await getPrompt(workspaceId);
     return NextResponse.json({ prompt });
   } catch (error) {
-    console.error('[API] Errore GET prompt:', error);
-    return NextResponse.json({ error: 'Errore nel recupero del prompt' }, { status: 500 });
+    console.error('[API Prompt GET] Errore:', error);
+    return NextResponse.json({ error: 'Errore caricamento prompt' }, { status: 500 });
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { workspaceId, content } = body;
 
-    if (!workspaceId || typeof content !== 'string') {
-      return NextResponse.json({ error: 'workspaceId e content obbligatori' }, { status: 400 });
+    if (!workspaceId || content === undefined) {
+      return NextResponse.json({ error: 'Dati mancanti' }, { status: 400 });
     }
 
-    const prompt = {
-      workspaceId,
-      content: content.trim(),
-      updatedAt: new Date().toISOString(),
-    };
+    try {
+      await savePrompt({
+        workspaceId,
+        content,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (dbError: any) {
+      console.error('[API Prompt POST] Errore DB:', dbError);
+      return NextResponse.json({ 
+        error: 'Errore salvataggio prompt nel database',
+        details: dbError.message 
+      }, { status: 500 });
+    }
 
-    await savePrompt(prompt);
-    return NextResponse.json({ prompt });
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('[API] Errore POST prompt:', error);
-    return NextResponse.json({ error: 'Errore nel salvataggio del prompt' }, { status: 500 });
+    console.error('[API Prompt POST] Errore:', error);
+    return NextResponse.json({ error: 'Errore interno' }, { status: 500 });
   }
 }
