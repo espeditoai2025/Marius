@@ -4,7 +4,7 @@
  */
 
 // @ts-ignore
-import { PDFParse as pdfParse } from 'pdf-parse';
+import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 import { parse as csvParse } from 'csv-parse/sync';
 
@@ -34,12 +34,12 @@ export async function parseDocument(
  */
 async function parsePDF(buffer: Buffer): Promise<string> {
   try {
-    // @ts-ignore - Assuming PDFParse is a function or has a similar interface to pdf-parse
+    // pdf-parse 1.1.1 è una funzione che accetta il buffer direttamente
     const data = await pdfParse(buffer);
     return data.text || '';
   } catch (error) {
     console.error('[Parser] Errore parsing PDF:', error);
-    throw new Error('Impossibile leggere il file PDF');
+    throw new Error('Impossibile leggere il file PDF. Assicurati che non sia protetto da password.');
   }
 }
 
