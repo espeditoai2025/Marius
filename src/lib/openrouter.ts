@@ -7,7 +7,7 @@ import OpenAI from 'openai';
 
 // Modelli configurati
 export const CHAT_MODEL = 'openai/gpt-4o-mini';
-export const EMBEDDING_MODEL = 'openai/text-embedding-3-small';
+export const EMBEDDING_MODEL = 'nomic-ai/nomic-embed-text-v1.5'; // Cambiato per maggiore stabilità su OpenRouter
 export const CLEANING_MODEL = 'openai/gpt-4o-mini';
 
 // Funzione per ottenere il client
@@ -16,13 +16,14 @@ let clientInstance: OpenAI | null = null;
 function getClient() {
   if (!clientInstance) {
     const apiKey = process.env.OPENROUTER_API_KEY;
+    console.log(`[OpenRouter] Inizializzazione client. Chiave presente: ${!!apiKey}`);
     
     clientInstance = new OpenAI({
-      apiKey: apiKey || 'no-key-provided', 
+      apiKey: apiKey || '', 
       baseURL: 'https://openrouter.ai/api/v1/',
       defaultHeaders: {
-        'HTTP-Referer': 'http://localhost:3000',
-        'X-Title': 'Financial AI Lab',
+        'HTTP-Referer': 'https://financial-ai-lab.vercel.app',
+        'X-Title': 'Marius Financial AI',
       },
     });
   }
@@ -53,9 +54,9 @@ export async function chatCompletion(
     const model = response.model || (options?.model || CHAT_MODEL);
 
     return { content, model };
-  } catch (error) {
-    console.error('[OpenRouter] Errore chat completion:', error);
-    throw new Error(`Errore AI: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`);
+  } catch (error: any) {
+    console.error('[OpenRouter] Errore chat completion:', error?.message || error);
+    throw new Error(`AI Chat Error: ${error?.message || 'Unknown error'}`);
   }
 }
 
@@ -65,30 +66,32 @@ export async function chatCompletion(
 export async function createEmbedding(text: string): Promise<number[]> {
   try {
     const client = getClient();
-    // Pulisci il testo da newline eccessive e tronca
-    const cleanText = text.replace(/\n/g, ' ').slice(0, 8000);
+    const cleanText = text.replace(/\s+/g, ' ').slice(0, 10000);
 
     const response = await client.embeddings.create({
       model: EMBEDDING_MODEL,
       input: cleanText,
     });
 
+    if (!response.data?.[0]?.embedding) {
+      throw new Error('Risposta embedding vuota da OpenRouter');
+    }
+
     return response.data[0].embedding;
-  } catch (error) {
-    console.error('[OpenRouter] Errore embedding:', error);
-    throw new Error(`Errore embedding: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`);
+  } catch (error: any) {
+    console.error(`[OpenRouter] Errore embedding (${EMBEDDING_MODEL}):`, error?.message || error);
+    throw error;
   }
 }
 
 /**
- * Genera embeddings per più testi in batch con gestione dei sottomoduli.
- * Suddivide in gruppi da 10 per evitare timeout e limiti di payload.
+ * Genera embeddings per più testi in batch.
  */
 export async function createEmbeddingsBatch(texts: string[]): Promise<number[][]> {
-  const batchSize = 10;
+  const batchSize = 5; // Ridotto ulteriormente per massima stabilità
   const results: number[][] = [];
   
-  console.log(`[OpenRouter] Avvio batch embedding per ${texts.length} frammenti...`);
+  console.log(`[OpenRouter] Avvio batch embedding (${EMBEDDING_MODEL}) per ${texts.length} frammenti...`);
 
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
@@ -96,14 +99,14 @@ export async function createEmbeddingsBatch(texts: string[]): Promise<number[][]
       const client = getClient();
       const response = await client.embeddings.create({
         model: EMBEDDING_MODEL,
-        input: batch.map(t => t.replace(/\n/g, ' ').slice(0, 8000)),
+        input: batch.map(t => t.replace(/\s+/g, ' ').slice(0, 10000)),
       });
       
       const embeddings = response.data.sort((a, b) => a.index - b.index).map(d => d.embedding);
       results.push(...embeddings);
-      console.log(`[OpenRouter] Completato batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(texts.length/batchSize)}`);
-    } catch (error) {
-      console.warn(`[OpenRouter] Errore batch ${i}, procedo uno alla volta per questo gruppo...`);
+      console.log(`[OpenRouter] Batch ${Math.floor(i/batchSize) + 1} completato.`);
+    } catch (error: any) {
+      console.warn(`[OpenRouter] Batch ${i} fallito: ${error?.message}. Riprovo singolarmente...`);
       for (const text of batch) {
         results.push(await createEmbedding(text));
       }
