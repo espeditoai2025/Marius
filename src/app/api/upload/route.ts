@@ -12,6 +12,9 @@ import { v4 as uuidv4 } from 'uuid';
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
+  const requestId = uuidv4().slice(0, 8);
+  console.log(`[API Upload][${requestId}] Inizio richiesta...`);
+
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
@@ -20,8 +23,6 @@ export async function POST(req: NextRequest) {
     if (!file || !workspaceId) {
       return NextResponse.json({ error: 'Dati mancanti' }, { status: 400 });
     }
-
-    console.log(`[API Upload] Ricevuto file: ${file.name} (${file.size} bytes)`);
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const mimeType = getMimeType(file.name);
@@ -32,21 +33,14 @@ export async function POST(req: NextRequest) {
     try {
       rawText = await parseDocument(buffer, mimeType);
     } catch (parseError: any) {
-      console.error('[API Upload] Errore Parsing:', parseError);
-      return NextResponse.json({ error: 'Errore lettura PDF', detail: parseError.message }, { status: 500 });
+      console.error(`[API Upload][${requestId}] Errore Parsing:`, parseError);
+      return NextResponse.json({ error: 'Errore lettura file', detail: parseError.message }, { status: 500 });
     }
 
     if (!rawText || rawText.trim().length === 0) {
-      console.warn('[API Upload] Testo estratto vuoto. Possibile PDF scannerizzato.');
-      return NextResponse.json({ 
-        error: 'Il documento non contiene testo estraibile.', 
-        detail: 'Se è una scansione o un\'immagine, il sistema non può leggerlo senza OCR.' 
-      }, { status: 400 });
+      return NextResponse.json({ error: 'Documento vuoto o non leggibile' }, { status: 400 });
     }
 
-    console.log(`[API Upload] Testo estratto: ${rawText.length} caratteri.`);
-
-    // 2. Creazione Record Documento
     const docId = uuidv4();
     const docMeta = {
       id: docId,
@@ -58,21 +52,15 @@ export async function POST(req: NextRequest) {
       uploadedAt: new Date().toISOString(),
     };
 
+    // 2. Salvataggio Immediato Metadati
     await addDocument(workspaceId, docMeta);
 
-    // 3. Pulizia e Chunking
-    const cleanedText = await cleanTextWithAI(rawText);
-    const chunks = chunkText(cleanedText, { chunkSize: 2000, overlap: 300 });
-    
-    console.log(`[API Upload] Creati ${chunks.length} chunks.`);
+    // 3. Chunking (usiamo il testo grezzo subito per velocità)
+    const chunks = chunkText(rawText, { chunkSize: 1500, overlap: 200 });
+    console.log(`[API Upload][${requestId}] Creati ${chunks.length} chunks.`);
 
-    if (chunks.length === 0) {
-      return NextResponse.json({ error: 'Errore nella divisione del testo in frammenti.' }, { status: 500 });
-    }
-
-    // 4. Generazione Embeddings e Salvataggio Chunk
+    // 4. Generazione Embeddings (Batching di 10)
     try {
-      console.log(`[API Upload] Generazione embeddings per ${chunks.length} chunks...`);
       const embeddings = await createEmbeddingsBatch(chunks);
       
       const docChunks = chunks.map((content, i) => ({
@@ -88,23 +76,22 @@ export async function POST(req: NextRequest) {
 
       await addChunks(workspaceId, docChunks);
 
-      // Aggiorniamo il conteggio chunk nel documento per la UI
+      // Aggiorniamo il documento
       const finalDocMeta = { ...docMeta, chunksCount: chunks.length };
       await addDocument(workspaceId, finalDocMeta);
 
-      console.log('[API Upload] Upload completato con successo.');
+      // 5. Pulizia AI asincrona (opzionale per il futuro o limitata)
+      // Per ora, avendo già i chunk indicizzati, l'app funzionerà.
+      
       return NextResponse.json({ success: true, document: finalDocMeta });
 
     } catch (aiError: any) {
-      console.error('[API Upload] Errore AI/Embeddings:', aiError);
-      return NextResponse.json({ 
-        error: 'Errore indicizzazione AI', 
-        detail: 'Il file è stato caricato ma la generazione degli embeddings è fallita. Verifica la quota API.' 
-      }, { status: 500 });
+      console.error(`[API Upload][${requestId}] Errore Embeddings:`, aiError);
+      return NextResponse.json({ error: 'Errore generazione vettori AI', detail: aiError.message }, { status: 500 });
     }
 
   } catch (error: any) {
-    console.error('[API Upload] Errore fatale:', error);
+    console.error(`[API Upload][${requestId}] Errore fatale:`, error);
     return NextResponse.json({ error: 'Errore interno', detail: error.message }, { status: 500 });
   }
 }
