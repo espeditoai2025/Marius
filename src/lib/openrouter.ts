@@ -6,7 +6,7 @@
 import OpenAI from 'openai';
 
 // Modelli configurati
-export const CHAT_MODEL = 'deepseek/deepseek-v4-flash';
+export const CHAT_MODEL = 'openai/gpt-4o-mini'; // Impostato come default come richiesto
 export const EMBEDDING_MODEL = 'openai/text-embedding-3-small';
 export const CLEANING_MODEL = 'openai/gpt-4o-mini';
 

@@ -4,7 +4,7 @@
  */
 
 // @ts-ignore
-import pdfParse from 'pdf-parse';
+import { PDFParse } from 'pdf-parse';
 import mammoth from 'mammoth';
 import { parse as csvParse } from 'csv-parse/sync';
 import { chatCompletion, CLEANING_MODEL } from './openrouter';
@@ -36,7 +36,7 @@ export async function parseDocument(
   }
 
   // Se il testo è significativo, lo puliamo con l'AI (GPT-4o-mini)
-  if (text && text.trim().length > 100) {
+  if (text && text.trim().length > 50) {
     return await cleanTextWithAI(text);
   }
 
@@ -44,15 +44,28 @@ export async function parseDocument(
 }
 
 /**
- * Estrae testo da un file PDF.
+ * Estrae testo da un file PDF usando pdf-parse 2.4.5 (interfaccia a classi).
  */
 async function parsePDF(buffer: Buffer): Promise<string> {
+  let parser: any = null;
   try {
-    const data = await pdfParse(buffer);
-    return data.text || '';
+    // Istanziamento del parser con i dati del buffer
+    parser = new PDFParse({ data: buffer });
+    
+    // Caricamento del documento
+    await parser.load();
+    
+    // Estrazione del testo
+    const result = await parser.getText();
+    return result.text || '';
   } catch (error) {
     console.error('[Parser] Errore parsing PDF:', error);
-    throw new Error('Impossibile leggere il file PDF.');
+    throw new Error('Impossibile leggere il file PDF con il parser avanzato.');
+  } finally {
+    // Pulizia risorse
+    if (parser && parser.destroy) {
+      await parser.destroy();
+    }
   }
 }
 
@@ -90,37 +103,30 @@ function parseCSV(buffer: Buffer): string {
 
 /**
  * Pulisce e formatta il testo estratto usando GPT-4o-mini.
- * Rimuove rumore, corregge errori di parsing e struttura in Markdown.
  */
 async function cleanTextWithAI(rawText: string): Promise<string> {
   try {
-    // Tronchiamo il testo se è troppo lungo per una singola passata di pulizia (max ~15k caratteri)
     const textToClean = rawText.slice(0, 15000);
 
-    const prompt = `Sei un esperto di analisi documenti finanziari. 
-Il testo seguente è stato estratto da un file tramite OCR o parsing PDF e potrebbe contenere rumore (numeri di pagina, intestazioni ripetute, caratteri speciali errati).
+    const prompt = `Pulisci e formatta il seguente testo estratto da un documento finanziario. 
+Rimuovi intestazioni ripetitive, numeri di pagina e rumore di parsing. 
+Mantieni la struttura (tabelle, elenchi) e converti in Markdown pulito.
+Restituisci solo il testo elaborato senza commenti.
 
-OBIETTIVO:
-1. Pulisci il testo rimuovendo intestazioni/piè di pagina ripetitivi.
-2. Mantieni tutti i dati numerici, tabelle e informazioni chiave.
-3. Formatta il risultato in Markdown pulito e leggibile.
-4. Non aggiungere commenti personali, restituisci solo il testo elaborato.
-
-TESTO DA ELABORARE:
+TESTO:
 ${textToClean}`;
 
     const { content } = await chatCompletion([
-      { role: 'system', content: 'Sei un estrattore di dati preciso.' },
+      { role: 'system', content: 'Sei un assistente specializzato nella pulizia di documenti finanziari.' },
       { role: 'user', content: prompt }
     ], { 
       model: CLEANING_MODEL,
-      temperature: 0.1 // Bassa temperatura per massima precisione
+      temperature: 0
     });
 
     return content;
   } catch (error) {
     console.error('[Parser] Errore pulizia AI:', error);
-    // Se l'AI fallisce, restituiamo il testo originale troncato (meglio di niente)
     return rawText.slice(0, 15000);
   }
 }
