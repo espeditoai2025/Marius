@@ -1,8 +1,6 @@
 /**
  * openrouter.ts — Client OpenRouter API
  * Usa il pacchetto `openai` con baseURL personalizzato per OpenRouter.
- * Chat: deepseek/deepseek-v4-flash
- * Embeddings: openai/text-embedding-3-small
  */
 
 import OpenAI from 'openai';
@@ -10,20 +8,15 @@ import OpenAI from 'openai';
 // Modelli configurati
 export const CHAT_MODEL = 'deepseek/deepseek-v4-flash';
 export const EMBEDDING_MODEL = 'openai/text-embedding-3-small';
+export const CLEANING_MODEL = 'openai/gpt-4o-mini';
 
-// Funzione per ottenere il client (Lazy initialization per evitare errori durante il build)
+// Funzione per ottenere il client
 let clientInstance: OpenAI | null = null;
 
 function getClient() {
   if (!clientInstance) {
     const apiKey = process.env.OPENROUTER_API_KEY;
     
-    // Durante il build di Next.js le variabili d'ambiente potrebbero mancare.
-    // Usiamo una stringa dummy solo per evitare il crash immediato se siamo in build mode.
-    if (!apiKey && process.env.NODE_ENV === 'production') {
-       console.warn('[OpenRouter] Attenzione: OPENROUTER_API_KEY non trovata.');
-    }
-
     clientInstance = new OpenAI({
       apiKey: apiKey || 'no-key-provided', 
       baseURL: 'https://openrouter.ai/api/v1/',
@@ -37,11 +30,12 @@ function getClient() {
 }
 
 /**
- * Esegue una chat completion tramite DeepSeek v4 Flash via OpenRouter.
+ * Esegue una completion generica.
  */
 export async function chatCompletion(
   messages: OpenAI.ChatCompletionMessageParam[],
   options?: {
+    model?: string;
     temperature?: number;
     maxTokens?: number;
   }
@@ -49,31 +43,28 @@ export async function chatCompletion(
   try {
     const client = getClient();
     const response = await client.chat.completions.create({
-      model: CHAT_MODEL,
+      model: options?.model || CHAT_MODEL,
       messages,
       temperature: options?.temperature ?? 0.7,
       max_tokens: options?.maxTokens ?? 4096,
     });
 
     const content = response.choices[0]?.message?.content || '';
-    const model = response.model || CHAT_MODEL;
+    const model = response.model || (options?.model || CHAT_MODEL);
 
     return { content, model };
   } catch (error) {
     console.error('[OpenRouter] Errore chat completion:', error);
-    throw new Error(
-      `Errore nella chiamata al modello AI: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`
-    );
+    throw new Error(`Errore AI: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`);
   }
 }
 
 /**
- * Genera un embedding per il testo dato usando text-embedding-3-small via OpenRouter.
+ * Genera un embedding per il testo dato.
  */
 export async function createEmbedding(text: string): Promise<number[]> {
   try {
     const client = getClient();
-    // Tronca il testo se troppo lungo (max ~8000 token ≈ 32000 chars)
     const truncated = text.slice(0, 32000);
 
     const response = await client.embeddings.create({
@@ -84,9 +75,7 @@ export async function createEmbedding(text: string): Promise<number[]> {
     return response.data[0].embedding;
   } catch (error) {
     console.error('[OpenRouter] Errore embedding:', error);
-    throw new Error(
-      `Errore nella generazione embedding: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`
-    );
+    throw new Error(`Errore embedding: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`);
   }
 }
 
@@ -96,21 +85,17 @@ export async function createEmbedding(text: string): Promise<number[]> {
 export async function createEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   try {
     const client = getClient();
-    const truncated = texts.map(t => t.slice(0, 32000));
-
     const response = await client.embeddings.create({
       model: EMBEDDING_MODEL,
-      input: truncated,
+      input: texts.map(t => t.slice(0, 32000)),
     });
 
     return response.data.map(d => d.embedding);
   } catch (error) {
     console.error('[OpenRouter] Errore batch embedding:', error);
-    // Fallback: genera uno alla volta
     const results: number[][] = [];
     for (const text of texts) {
-      const embedding = await createEmbedding(text);
-      results.push(embedding);
+      results.push(await createEmbedding(text));
     }
     return results;
   }
