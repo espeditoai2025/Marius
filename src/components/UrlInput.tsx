@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Globe, Plus, Trash2, Loader2, Link as LinkIcon, X } from 'lucide-react';
+import { Globe, Plus, Trash2, Loader2, Link as LinkIcon, X, AlertCircle } from 'lucide-react';
 
 interface UrlMeta {
   id: string;
@@ -23,15 +23,18 @@ export default function UrlInput({ workspaceId }: UrlInputProps) {
   const [urls, setUrls] = useState<UrlMeta[]>([]);
   const [inputUrl, setInputUrl] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<{ title: string; details: string } | null>(null);
 
   useEffect(() => {
-    fetchUrls();
+    if (workspaceId) {
+      fetchUrls();
+    }
   }, [workspaceId]);
 
   async function fetchUrls() {
     try {
       const res = await fetch(`/api/ingest-url?workspaceId=${workspaceId}`);
+      if (!res.ok) throw new Error('Errore recupero URL');
       const data = await res.json();
       setUrls(data.urls || []);
     } catch (err) {
@@ -42,16 +45,15 @@ export default function UrlInput({ workspaceId }: UrlInputProps) {
   async function handleIngest() {
     if (!inputUrl.trim() || loading) return;
 
-    // Semplice validazione URL
     try {
       new URL(inputUrl);
     } catch {
-      setError('Inserisci un URL valido (es: https://google.com)');
+      setError({ title: 'URL non valido', details: 'Inserisci un indirizzo completo (es: https://google.com)' });
       return;
     }
 
     setLoading(true);
-    setError('');
+    setError(null);
 
     try {
       const res = await fetch('/api/ingest-url', {
@@ -60,16 +62,24 @@ export default function UrlInput({ workspaceId }: UrlInputProps) {
         body: JSON.stringify({ workspaceId, url: inputUrl }),
       });
 
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Il server ha risposto in modo inaspettato. Controlla i log di Vercel.');
+      }
+
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || 'Errore durante l\'ingestion');
+        throw new Error(data.details || data.error || 'Errore durante l\'ingestion');
       }
 
       setUrls(prev => [...prev, data.url]);
       setInputUrl('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Errore sconosciuto');
+    } catch (err: any) {
+      setError({ 
+        title: 'Errore Ingestion', 
+        details: err.message || 'Errore sconosciuto durante la lettura del sito.' 
+      });
     } finally {
       setLoading(false);
     }
@@ -102,7 +112,6 @@ export default function UrlInput({ workspaceId }: UrlInputProps) {
       </div>
 
       <div className="p-4 space-y-4 flex-1 overflow-y-auto">
-        {/* Input URL */}
         <div className="space-y-2">
           <div className="flex gap-2">
             <div className="relative flex-1">
@@ -124,15 +133,24 @@ export default function UrlInput({ workspaceId }: UrlInputProps) {
               {loading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
             </button>
           </div>
+
           {error && (
-            <div className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-[11px] text-red-400 flex items-center justify-between">
-              <span>{error}</span>
-              <button onClick={() => setError('')}><X size={12} /></button>
+            <div className="px-3 py-4 rounded-xl bg-amber-500/10 border border-amber-500/20 flex gap-3">
+              <AlertCircle size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-[11px] text-amber-300 font-semibold">{error.title}</p>
+                <p className="text-[10px] text-amber-400/80 leading-normal mt-1">{error.details}</p>
+                <button 
+                  onClick={() => setError(null)}
+                  className="mt-2 text-[10px] text-amber-400/60 hover:text-amber-400 underline underline-offset-2"
+                >
+                  Chiudi
+                </button>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Lista URL */}
         <div className="space-y-2">
           {urls.map(u => (
             <div

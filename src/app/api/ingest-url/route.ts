@@ -1,8 +1,5 @@
 /**
  * API Route: /api/ingest-url
- * POST — Ingest URL: crawl, chunk, embed
- * GET  — Lista URL indicizzati
- * DELETE — Rimuovi URL e relativi chunk
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -25,7 +22,6 @@ export async function GET(request: NextRequest) {
     const urls = await getUrls(workspaceId);
     return NextResponse.json({ urls });
   } catch (error) {
-    console.error('[API] Errore GET urls:', error);
     return NextResponse.json({ error: 'Errore nel recupero degli URL' }, { status: 500 });
   }
 }
@@ -36,61 +32,71 @@ export async function POST(request: NextRequest) {
     const { workspaceId, url } = body;
 
     if (!workspaceId || !url) {
-      return NextResponse.json({ error: 'workspaceId e url obbligatori' }, { status: 400 });
+      return NextResponse.json({ error: 'Dati mancanti' }, { status: 400 });
     }
 
-    // Validazione URL
+    // Crawl URL con gestione esplicita degli errori HTTP (come il 403)
     try {
-      new URL(url);
-    } catch {
-      return NextResponse.json({ error: 'URL non valido' }, { status: 400 });
+      const crawlResult = await crawlUrl(url);
+
+      if (!crawlResult.content || crawlResult.content.trim().length < 50) {
+        return NextResponse.json({ error: 'Nessun contenuto significativo trovato nell\'URL' }, { status: 400 });
+      }
+
+      // Chunking
+      const textChunks = chunkText(crawlResult.content);
+      const urlId = uuidv4();
+
+      // Genera embeddings
+      const embeddings = await createEmbeddingsBatch(textChunks);
+
+      // Crea chunk con embeddings
+      const chunks: DocumentChunk[] = textChunks.map((content, i) => ({
+        id: uuidv4(),
+        workspaceId,
+        sourceType: 'url' as const,
+        sourceName: crawlResult.title || url,
+        sourceId: urlId,
+        content,
+        embedding: embeddings[i] || [],
+        metadata: { url, title: crawlResult.title, chunkIndex: String(i) },
+      }));
+
+      // Salva
+      await addUrl(workspaceId, {
+        id: urlId,
+        workspaceId,
+        url,
+        title: crawlResult.title,
+        chunksCount: chunks.length,
+        ingestedAt: new Date().toISOString(),
+      });
+
+      await addChunks(workspaceId, chunks);
+
+      return NextResponse.json({
+        url: { id: urlId, url, title: crawlResult.title, chunksCount: chunks.length },
+      }, { status: 201 });
+
+    } catch (crawlError: any) {
+      console.error('[API Ingest URL] Errore crawl:', crawlError);
+      
+      // Gestione specifica del 403 Forbidden
+      if (crawlError.message?.includes('403') || crawlError.status === 403) {
+        return NextResponse.json({ 
+          error: "Il sito blocca l'accesso automatico (HTTP 403).",
+          details: "Carica il contenuto come PDF/TXT oppure usa un altro URL che non blocchi i crawler." 
+        }, { status: 403 });
+      }
+
+      return NextResponse.json({ 
+        error: "Errore durante l'accesso al sito web.",
+        details: crawlError.message 
+      }, { status: 500 });
     }
 
-    // Crawl URL
-    const crawlResult = await crawlUrl(url);
-
-    if (!crawlResult.content || crawlResult.content.trim().length < 50) {
-      return NextResponse.json({ error: 'Nessun contenuto significativo trovato nell\'URL' }, { status: 400 });
-    }
-
-    // Chunking
-    const textChunks = chunkText(crawlResult.content);
-    const urlId = uuidv4();
-
-    // Genera embeddings
-    const embeddings = await createEmbeddingsBatch(textChunks);
-
-    // Crea chunk con embeddings
-    const chunks: DocumentChunk[] = textChunks.map((content, i) => ({
-      id: uuidv4(),
-      workspaceId,
-      sourceType: 'url' as const,
-      sourceName: crawlResult.title || url,
-      sourceId: urlId,
-      content,
-      embedding: embeddings[i] || [],
-      metadata: { url, title: crawlResult.title, chunkIndex: String(i) },
-    }));
-
-    // Salva metadati URL e chunk
-    await addUrl(workspaceId, {
-      id: urlId,
-      workspaceId,
-      url,
-      title: crawlResult.title,
-      chunksCount: chunks.length,
-      ingestedAt: new Date().toISOString(),
-    });
-
-    await addChunks(workspaceId, chunks);
-
-    return NextResponse.json({
-      url: { id: urlId, url, title: crawlResult.title, chunksCount: chunks.length },
-    }, { status: 201 });
-  } catch (error) {
-    console.error('[API] Errore POST ingest-url:', error);
-    const message = error instanceof Error ? error.message : 'Errore sconosciuto';
-    return NextResponse.json({ error: `Errore nell'ingestion URL: ${message}` }, { status: 500 });
+  } catch (error: any) {
+    return NextResponse.json({ error: "Errore interno del server", details: error.message }, { status: 500 });
   }
 }
 
@@ -101,13 +107,12 @@ export async function DELETE(request: NextRequest) {
     const urlId = searchParams.get('urlId');
 
     if (!workspaceId || !urlId) {
-      return NextResponse.json({ error: 'workspaceId e urlId obbligatori' }, { status: 400 });
+      return NextResponse.json({ error: 'Dati mancanti' }, { status: 400 });
     }
 
     await removeUrl(workspaceId, urlId);
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('[API] Errore DELETE url:', error);
     return NextResponse.json({ error: 'Errore nella rimozione dell\'URL' }, { status: 500 });
   }
 }

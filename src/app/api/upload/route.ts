@@ -4,10 +4,13 @@
 
 import { NextResponse } from 'next/server';
 import { addDocument, addChunks } from '@/lib/store';
-import { parseDocument, getMimeType } from '@/lib/parser';
+import { getMimeType } from '@/lib/parser';
 import { chunkText } from '@/lib/chunker';
 import { createEmbeddingsBatch } from '@/lib/openrouter';
 import { v4 as uuidv4 } from 'uuid';
+
+// Forza il runtime Node.js per supportare le librerie di parsing
+export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
   try {
@@ -20,32 +23,39 @@ export async function POST(request: Request) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    
-    // 1. Parsing del documento
     const mimeType = getMimeType(file.name);
     let text = '';
+
+    // Import dinamico del parser per evitare errori di build/static analysis
+    const { parseDocument } = await import('@/lib/parser');
+
     try {
       text = await parseDocument(buffer, mimeType);
-    } catch (parseError) {
+    } catch (parseError: any) {
       console.error('[API Upload] Errore parsing:', parseError);
-      return NextResponse.json({ error: 'Impossibile leggere il contenuto del file' }, { status: 500 });
+      return NextResponse.json({ 
+        error: 'Errore durante la lettura del file', 
+        details: parseError.message || 'Il formato del file potrebbe non essere supportato o il file è corrotto.' 
+      }, { status: 500 });
     }
 
     if (!text || text.trim().length === 0) {
-      return NextResponse.json({ error: 'Il file sembra essere vuoto o non leggibile' }, { status: 400 });
+      return NextResponse.json({ error: 'Il file non contiene testo leggibile' }, { status: 400 });
     }
 
-    // 2. Chunking (Passando le opzioni come oggetto come richiesto dalla firma)
+    // 2. Chunking
     const chunks = chunkText(text, { chunkSize: 2500, overlap: 400 });
 
     // 3. Generazione Embeddings (Batch)
-    // chunks è un array di stringhe (string[])
     let embeddings: number[][] = [];
     try {
       embeddings = await createEmbeddingsBatch(chunks);
-    } catch (embError) {
+    } catch (embError: any) {
       console.error('[API Upload] Errore embeddings:', embError);
-      return NextResponse.json({ error: 'Errore generazione embeddings AI' }, { status: 500 });
+      return NextResponse.json({ 
+        error: 'Errore generazione embeddings AI',
+        details: embError.message 
+      }, { status: 500 });
     }
 
     // 4. Salvataggio Metadati Documento
@@ -69,7 +79,7 @@ export async function POST(request: Request) {
       sourceType: 'document' as const,
       sourceId: docId,
       sourceName: file.name,
-      content: content,
+      content,
       embedding: embeddings[i] || [],
       metadata: { index: i },
     }));
@@ -78,9 +88,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ document: docMeta });
   } catch (error: any) {
-    console.error('[API Upload] Errore generale:', error);
+    console.error('[API Upload] Errore fatale:', error);
     return NextResponse.json({ 
-      error: 'Errore interno durante l\'upload', 
+      error: 'Errore interno durante il caricamento', 
       details: error.message 
     }, { status: 500 });
   }

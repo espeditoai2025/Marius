@@ -3,8 +3,6 @@
  * Estrae testo grezzo dai file caricati.
  */
 
-// @ts-ignore
-import { PDFParse } from 'pdf-parse';
 import mammoth from 'mammoth';
 import { parse as csvParse } from 'csv-parse/sync';
 import { chatCompletion, CLEANING_MODEL } from './openrouter';
@@ -35,7 +33,7 @@ export async function parseDocument(
       break;
   }
 
-  // Se il testo è significativo, lo puliamo con l'AI (GPT-4o-mini)
+  // Se il testo è significativo, lo puliamo con l'AI (gpt-4o-mini)
   if (text && text.trim().length > 50) {
     return await cleanTextWithAI(text);
   }
@@ -44,28 +42,27 @@ export async function parseDocument(
 }
 
 /**
- * Estrae testo da un file PDF usando pdf-parse 2.4.5 (interfaccia a classi).
+ * Estrae testo da un file PDF usando import dinamico per stabilità su Vercel.
  */
 async function parsePDF(buffer: Buffer): Promise<string> {
-  let parser: any = null;
   try {
-    // Istanziamento del parser con i dati del buffer
-    parser = new PDFParse({ data: buffer });
+    // Import dinamico della libreria specifica
+    const { PDFParse } = await import('pdf-parse');
     
-    // Caricamento del documento
-    await parser.load();
-    
-    // Estrazione del testo
-    const result = await parser.getText();
-    return result.text || '';
-  } catch (error) {
-    console.error('[Parser] Errore parsing PDF:', error);
-    throw new Error('Impossibile leggere il file PDF con il parser avanzato.');
-  } finally {
-    // Pulizia risorse
-    if (parser && parser.destroy) {
-      await parser.destroy();
+    let parser: any = null;
+    try {
+      parser = new PDFParse({ data: buffer });
+      await parser.load();
+      const result = await parser.getText();
+      return result.text || '';
+    } finally {
+      if (parser && parser.destroy) {
+        await parser.destroy();
+      }
     }
+  } catch (error: any) {
+    console.error('[Parser] Errore parsing PDF:', error);
+    throw new Error(`Errore durante l'estrazione del testo dal PDF: ${error.message}`);
   }
 }
 
@@ -77,8 +74,7 @@ async function parseDOCX(buffer: Buffer): Promise<string> {
     const result = await mammoth.extractRawText({ buffer });
     return result.value || '';
   } catch (error) {
-    console.error('[Parser] Errore parsing DOCX:', error);
-    throw new Error('Impossibile leggere il file DOCX');
+    throw new Error('Errore durante la lettura del file Word');
   }
 }
 
@@ -102,7 +98,7 @@ function parseCSV(buffer: Buffer): string {
 }
 
 /**
- * Pulisce e formatta il testo estratto usando GPT-4o-mini.
+ * Pulisce e formatta il testo estratto usando gpt-4o-mini.
  */
 async function cleanTextWithAI(rawText: string): Promise<string> {
   try {

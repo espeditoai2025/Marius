@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Upload, FileText, Trash2, Loader2, X } from 'lucide-react';
+import { Upload, FileText, Trash2, Loader2, X, AlertCircle } from 'lucide-react';
 
 interface DocumentMeta {
   id: string;
@@ -26,12 +26,15 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchDocuments();
+    if (workspaceId) {
+      fetchDocuments();
+    }
   }, [workspaceId]);
 
   async function fetchDocuments() {
     try {
       const res = await fetch(`/api/upload?workspaceId=${workspaceId}`);
+      if (!res.ok) throw new Error('Errore nel recupero documenti');
       const data = await res.json();
       setDocuments(data.documents || []);
     } catch (err) {
@@ -56,10 +59,17 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
         body: formData,
       });
 
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await res.text();
+        console.error('Risposta non JSON:', text);
+        throw new Error('Il server ha restituito un errore inaspettato (HTML). Controlla i log di Vercel.');
+      }
+
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || 'Errore durante l\'upload');
+        throw new Error(data.details || data.error || 'Errore durante l\'upload');
       }
 
       setDocuments(prev => [...prev, data.document]);
@@ -67,7 +77,6 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
       setError(err instanceof Error ? err.message : 'Errore sconosciuto');
     } finally {
       setUploading(false);
-      // Reset input file
       e.target.value = '';
     }
   }
@@ -107,7 +116,6 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
       </div>
 
       <div className="p-4 space-y-4 flex-1 overflow-y-auto">
-        {/* Area Upload */}
         <label className={`relative flex flex-col items-center justify-center w-full h-32 rounded-xl border-2 border-dashed transition-all cursor-pointer ${
           uploading ? 'bg-white/5 border-violet-500/50' : 'border-white/10 hover:border-violet-500/30 hover:bg-white/5'
         }`}>
@@ -121,7 +129,7 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
           {uploading ? (
             <div className="flex flex-col items-center gap-2">
               <Loader2 size={24} className="text-violet-400 animate-spin" />
-              <span className="text-xs text-slate-400 font-medium">Elaborazione...</span>
+              <span className="text-xs text-slate-400 font-medium">Elaborazione AI...</span>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2">
@@ -135,13 +143,20 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
         </label>
 
         {error && (
-          <div className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-[11px] text-red-400 flex items-center justify-between">
-            <span>{error}</span>
-            <button onClick={() => setError('')}><X size={12} /></button>
+          <div className="px-3 py-4 rounded-xl bg-red-500/10 border border-red-500/20 flex gap-3">
+            <AlertCircle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-[11px] text-red-400 leading-normal font-medium">{error}</p>
+              <button 
+                onClick={() => setError('')}
+                className="mt-2 text-[10px] text-red-400/60 hover:text-red-400 underline underline-offset-2"
+              >
+                Chiudi
+              </button>
+            </div>
           </div>
         )}
 
-        {/* Lista Documenti */}
         <div className="space-y-2">
           {documents.map(doc => (
             <div
