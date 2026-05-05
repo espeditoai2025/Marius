@@ -27,13 +27,11 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const mimeType = getMimeType(file.name);
     
-    // 1. Estrazione Testo
-    const { parseDocument, cleanTextWithAI } = await import('@/lib/parser');
+    const { parseDocument } = await import('@/lib/parser');
     let rawText = '';
     try {
       rawText = await parseDocument(buffer, mimeType);
     } catch (parseError: any) {
-      console.error(`[API Upload][${requestId}] Errore Parsing:`, parseError);
       return NextResponse.json({ error: 'Errore lettura file', detail: parseError.message }, { status: 500 });
     }
 
@@ -52,17 +50,27 @@ export async function POST(req: NextRequest) {
       uploadedAt: new Date().toISOString(),
     };
 
-    // 2. Salvataggio Immediato Metadati
-    await addDocument(workspaceId, docMeta);
-
-    // 3. Chunking (usiamo il testo grezzo subito per velocità)
-    const chunks = chunkText(rawText, { chunkSize: 1500, overlap: 200 });
-    console.log(`[API Upload][${requestId}] Creati ${chunks.length} chunks.`);
-
-    // 4. Generazione Embeddings (Batching di 10)
+    // Salvataggio Metadati
     try {
-      const embeddings = await createEmbeddingsBatch(chunks);
-      
+      await addDocument(workspaceId, docMeta);
+    } catch (dbError: any) {
+      console.error(`[API Upload][${requestId}] Errore DB Documenti:`, dbError);
+      return NextResponse.json({ error: 'Errore Database (Documenti)', detail: dbError.message || 'Controlla che la tabella "documents" esista.' }, { status: 500 });
+    }
+
+    const chunks = chunkText(rawText, { chunkSize: 1500, overlap: 200 });
+
+    // 1. Generazione Embeddings (AI)
+    let embeddings: number[][] = [];
+    try {
+      embeddings = await createEmbeddingsBatch(chunks);
+    } catch (aiError: any) {
+      console.error(`[API Upload][${requestId}] Errore AI:`, aiError);
+      return NextResponse.json({ error: 'Errore Generazione AI (OpenRouter)', detail: aiError.message }, { status: 500 });
+    }
+
+    // 2. Salvataggio Chunks (Database)
+    try {
       const docChunks = chunks.map((content, i) => ({
         id: uuidv4(),
         workspaceId,
@@ -76,23 +84,21 @@ export async function POST(req: NextRequest) {
 
       await addChunks(workspaceId, docChunks);
 
-      // Aggiorniamo il documento
-      const finalDocMeta = { ...docMeta, chunksCount: chunks.length };
-      await addDocument(workspaceId, finalDocMeta);
+      // Aggiorniamo il conteggio
+      await addDocument(workspaceId, { ...docMeta, chunksCount: chunks.length });
 
-      // 5. Pulizia AI asincrona (opzionale per il futuro o limitata)
-      // Per ora, avendo già i chunk indicizzati, l'app funzionerà.
-      
-      return NextResponse.json({ success: true, document: finalDocMeta });
-
-    } catch (aiError: any) {
-      console.error(`[API Upload][${requestId}] Errore Embeddings:`, aiError);
-      return NextResponse.json({ error: 'Errore generazione vettori AI', detail: aiError.message }, { status: 500 });
+      return NextResponse.json({ success: true, document: { ...docMeta, chunksCount: chunks.length } });
+    } catch (dbError: any) {
+      console.error(`[API Upload][${requestId}] Errore DB Chunks:`, dbError);
+      return NextResponse.json({ 
+        error: 'Errore Salvataggio Database (Chunks)', 
+        detail: `${dbError.message || 'Errore sconosciuto'}. Verifica se la tabella "chunks" esiste e se la dimensione del vettore è corretta.` 
+      }, { status: 500 });
     }
 
   } catch (error: any) {
     console.error(`[API Upload][${requestId}] Errore fatale:`, error);
-    return NextResponse.json({ error: 'Errore interno', detail: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Errore interno server', detail: error.message }, { status: 500 });
   }
 }
 
