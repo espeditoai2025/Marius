@@ -11,15 +11,30 @@ import OpenAI from 'openai';
 export const CHAT_MODEL = 'deepseek/deepseek-v4-flash';
 export const EMBEDDING_MODEL = 'openai/text-embedding-3-small';
 
-// Client OpenRouter (compatibile OpenAI SDK)
-const client = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY || '',
-  baseURL: 'https://openrouter.ai/api/v1/',
-  defaultHeaders: {
-    'HTTP-Referer': 'http://localhost:3000',
-    'X-Title': 'Financial AI Lab',
-  },
-});
+// Funzione per ottenere il client (Lazy initialization per evitare errori durante il build)
+let clientInstance: OpenAI | null = null;
+
+function getClient() {
+  if (!clientInstance) {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    
+    // Durante il build di Next.js le variabili d'ambiente potrebbero mancare.
+    // Usiamo una stringa dummy solo per evitare il crash immediato se siamo in build mode.
+    if (!apiKey && process.env.NODE_ENV === 'production') {
+       console.warn('[OpenRouter] Attenzione: OPENROUTER_API_KEY non trovata.');
+    }
+
+    clientInstance = new OpenAI({
+      apiKey: apiKey || 'no-key-provided', 
+      baseURL: 'https://openrouter.ai/api/v1/',
+      defaultHeaders: {
+        'HTTP-Referer': 'http://localhost:3000',
+        'X-Title': 'Financial AI Lab',
+      },
+    });
+  }
+  return clientInstance;
+}
 
 /**
  * Esegue una chat completion tramite DeepSeek v4 Flash via OpenRouter.
@@ -32,6 +47,7 @@ export async function chatCompletion(
   }
 ): Promise<{ content: string; model: string }> {
   try {
+    const client = getClient();
     const response = await client.chat.completions.create({
       model: CHAT_MODEL,
       messages,
@@ -56,6 +72,7 @@ export async function chatCompletion(
  */
 export async function createEmbedding(text: string): Promise<number[]> {
   try {
+    const client = getClient();
     // Tronca il testo se troppo lungo (max ~8000 token ≈ 32000 chars)
     const truncated = text.slice(0, 32000);
 
@@ -77,8 +94,8 @@ export async function createEmbedding(text: string): Promise<number[]> {
  * Genera embeddings per più testi in batch.
  */
 export async function createEmbeddingsBatch(texts: string[]): Promise<number[][]> {
-  // OpenRouter/OpenAI supporta batch embeddings
   try {
+    const client = getClient();
     const truncated = texts.map(t => t.slice(0, 32000));
 
     const response = await client.embeddings.create({
