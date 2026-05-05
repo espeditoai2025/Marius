@@ -8,22 +8,23 @@ import { parse as csvParse } from 'csv-parse/sync';
 import { chatCompletion, CLEANING_MODEL } from './openrouter';
 
 /**
- * Estrazione testo da PDF usando pdf-parse 1.1.1 (stabile su Vercel/Node).
+ * Estrazione testo da PDF usando unpdf.
+ * Libreria in puro JS senza dipendenze native, perfetta per Vercel.
  */
 export async function extractPdfText(buffer: Buffer): Promise<string> {
-  console.log('[Parser] Avvio estrazione PDF con pdf-parse 1.1.1...');
+  console.log('[Parser] Avvio estrazione PDF con unpdf...');
   try {
-    // Import dinamico
-    const pdf = (await import('pdf-parse')).default;
+    const { extractText } = await import('unpdf');
     
-    // pdf-parse 1.1.1 è sincrono/callback ma questa versione esporta una funzione async-friendly
-    const data = await pdf(buffer);
+    // Converte buffer in ArrayBuffer per unpdf
+    const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+    const { text } = await extractText(arrayBuffer);
     
-    console.log(`[Parser] Estrazione completata. Pagine: ${data.numpages}`);
-    return data.text || '';
+    console.log(`[Parser] Estrazione completata con unpdf. Lunghezza: ${text?.length || 0}`);
+    return text || '';
   } catch (error: any) {
-    console.error('[Parser PDF] Errore:', error);
-    throw new Error(`Errore durante il parsing del PDF: ${error.message}`);
+    console.error('[Parser PDF] Errore unpdf:', error);
+    throw new Error(`Errore unpdf: ${error.message}`);
   }
 }
 
@@ -58,7 +59,7 @@ export async function parseDocument(
 export async function cleanTextWithAI(rawText: string): Promise<string> {
   try {
     console.log('[Parser] Avvio pulizia AI...');
-    const textToClean = rawText.slice(0, 12000); // Limite prudenziale
+    const textToClean = rawText.slice(0, 12000); 
 
     const { content } = await chatCompletion([
       { role: 'system', content: 'Sei un assistente specializzato nella pulizia di documenti finanziari. Restituisci solo Markdown pulito.' },
