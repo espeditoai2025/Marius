@@ -21,24 +21,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Dati mancanti' }, { status: 400 });
     }
 
+    console.log(`[API Upload] Ricevuto file: ${file.name} (${file.size} bytes)`);
+
     const buffer = Buffer.from(await file.arrayBuffer());
     const mimeType = getMimeType(file.name);
     
-    // 1. Estrazione Testo Grezzo (Fase Critica)
+    // 1. Estrazione Testo
     const { parseDocument, cleanTextWithAI } = await import('@/lib/parser');
     let rawText = '';
     try {
       rawText = await parseDocument(buffer, mimeType);
     } catch (parseError: any) {
       console.error('[API Upload] Errore Parsing:', parseError);
-      return NextResponse.json({ error: 'Errore lettura file', detail: parseError.message }, { status: 500 });
+      return NextResponse.json({ error: 'Errore lettura PDF', detail: parseError.message }, { status: 500 });
     }
 
     if (!rawText || rawText.trim().length === 0) {
-      return NextResponse.json({ error: 'Il file sembra vuoto' }, { status: 400 });
+      console.warn('[API Upload] Testo estratto vuoto. Possibile PDF scannerizzato.');
+      return NextResponse.json({ 
+        error: 'Il documento non contiene testo estraibile.', 
+        detail: 'Se è una scansione o un\'immagine, il sistema non può leggerlo senza OCR.' 
+      }, { status: 400 });
     }
 
-    // 2. Creazione Record Documento su DB (Subito!)
+    console.log(`[API Upload] Testo estratto: ${rawText.length} caratteri.`);
+
+    // 2. Creazione Record Documento
     const docId = uuidv4();
     const docMeta = {
       id: docId,
@@ -46,20 +54,25 @@ export async function POST(req: NextRequest) {
       filename: file.name,
       mimeType,
       size: file.size,
-      chunksCount: 0, // Verrà aggiornato dopo
+      chunksCount: 0,
       uploadedAt: new Date().toISOString(),
     };
 
-    // Salviamo subito il metadato (così se il resto fallisce, il file è "censito")
     await addDocument(workspaceId, docMeta);
 
-    // 3. Elaborazione AI (Pulizia e Chunking)
-    // Se il testo è troppo lungo, lo puliamo con gpt-4o-mini
+    // 3. Pulizia e Chunking
     const cleanedText = await cleanTextWithAI(rawText);
     const chunks = chunkText(cleanedText, { chunkSize: 2000, overlap: 300 });
+    
+    console.log(`[API Upload] Creati ${chunks.length} chunks.`);
+
+    if (chunks.length === 0) {
+      return NextResponse.json({ error: 'Errore nella divisione del testo in frammenti.' }, { status: 500 });
+    }
 
     // 4. Generazione Embeddings e Salvataggio Chunk
     try {
+      console.log(`[API Upload] Generazione embeddings per ${chunks.length} chunks...`);
       const embeddings = await createEmbeddingsBatch(chunks);
       
       const docChunks = chunks.map((content, i) => ({
@@ -75,20 +88,19 @@ export async function POST(req: NextRequest) {
 
       await addChunks(workspaceId, docChunks);
 
-      // Aggiorniamo il conteggio chunk nel documento
+      // Aggiorniamo il conteggio chunk nel documento per la UI
       const finalDocMeta = { ...docMeta, chunksCount: chunks.length };
       await addDocument(workspaceId, finalDocMeta);
 
+      console.log('[API Upload] Upload completato con successo.');
       return NextResponse.json({ success: true, document: finalDocMeta });
 
     } catch (aiError: any) {
       console.error('[API Upload] Errore AI/Embeddings:', aiError);
-      // Restituiamo comunque il successo per il documento, segnalando che l'indicizzazione è parziale
       return NextResponse.json({ 
-        success: true, 
-        document: docMeta, 
-        warning: 'Documento caricato ma indicizzazione AI fallita.' 
-      });
+        error: 'Errore indicizzazione AI', 
+        detail: 'Il file è stato caricato ma la generazione degli embeddings è fallita. Verifica la quota API.' 
+      }, { status: 500 });
     }
 
   } catch (error: any) {
