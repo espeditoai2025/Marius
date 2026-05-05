@@ -2,69 +2,85 @@
  * api/upload — Caricamento e indicizzazione documenti
  */
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { addDocument, addChunks } from '@/lib/store';
 import { getMimeType } from '@/lib/parser';
 import { chunkText } from '@/lib/chunker';
 import { createEmbeddingsBatch } from '@/lib/openrouter';
 import { v4 as uuidv4 } from 'uuid';
 
-// Forza il runtime Node.js per supportare le librerie di parsing
 export const runtime = 'nodejs';
 
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const workspaceId = formData.get('workspaceId') as string;
+    const formData = await req.formData();
+    const file = formData.get('file') as File | null;
+    const workspaceId = formData.get('workspaceId') as string | null;
 
     if (!file || !workspaceId) {
-      return NextResponse.json({ error: 'File o Workspace ID mancante' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Nessun file ricevuto o Workspace ID mancante' },
+        { status: 400 }
+      );
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const mimeType = getMimeType(file.name);
     let text = '';
 
-    // Import dinamico del parser per evitare errori di build/static analysis
-    const { parseDocument } = await import('@/lib/parser');
-
-    try {
-      text = await parseDocument(buffer, mimeType);
-    } catch (parseError: any) {
-      console.error('[API Upload] Errore parsing:', parseError);
-      return NextResponse.json({ 
-        error: 'Errore durante la lettura del file', 
-        details: parseError.message || 'Il formato del file potrebbe non essere supportato o il file è corrotto.' 
-      }, { status: 500 });
+    // Gestione formati come richiesto
+    if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+      try {
+        // Import dinamico come suggerito
+        const pdfParse = (await import('pdf-parse')).default;
+        const parsed = await pdfParse(buffer);
+        text = parsed.text;
+      } catch (pdfErr: any) {
+        console.error('PDF_PARSE_ERROR', pdfErr);
+        return NextResponse.json({ 
+          error: 'Errore durante il parsing del PDF', 
+          detail: pdfErr.message 
+        }, { status: 500 });
+      }
+    } else if (file.type === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.csv')) {
+      text = buffer.toString('utf-8');
+    } else if (file.name.endsWith('.docx')) {
+      const mammoth = await import('mammoth');
+      const result = await mammoth.extractRawText({ buffer });
+      text = result.value;
+    } else {
+      return NextResponse.json(
+        { error: 'Formato file non ancora supportato' },
+        { status: 400 }
+      );
     }
 
     if (!text || text.trim().length === 0) {
-      return NextResponse.json({ error: 'Il file non contiene testo leggibile' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Non è stato possibile estrarre testo dal documento' },
+        { status: 400 }
+      );
     }
+
+    // --- Integrazione con RAG Pipeline (Supabase + Embeddings) ---
+    
+    // 1. Pulizia opzionale con AI (gpt-4o-mini)
+    const { parseDocument } = await import('@/lib/parser');
+    // Usiamo la funzione di pulizia che abbiamo già configurato
+    const cleanedText = text.length > 100 ? await (await import('@/lib/parser')).parseDocument(buffer, getMimeType(file.name)) : text;
 
     // 2. Chunking
-    const chunks = chunkText(text, { chunkSize: 2500, overlap: 400 });
+    const chunks = chunkText(cleanedText, { chunkSize: 2500, overlap: 400 });
 
-    // 3. Generazione Embeddings (Batch)
-    let embeddings: number[][] = [];
-    try {
-      embeddings = await createEmbeddingsBatch(chunks);
-    } catch (embError: any) {
-      console.error('[API Upload] Errore embeddings:', embError);
-      return NextResponse.json({ 
-        error: 'Errore generazione embeddings AI',
-        details: embError.message 
-      }, { status: 500 });
-    }
+    // 3. Embeddings
+    const embeddings = await createEmbeddingsBatch(chunks);
 
-    // 4. Salvataggio Metadati Documento
+    // 4. Salvataggio Metadati
     const docId = uuidv4();
     const docMeta = {
       id: docId,
       workspaceId,
       filename: file.name,
-      mimeType,
+      mimeType: getMimeType(file.name),
       size: file.size,
       chunksCount: chunks.length,
       uploadedAt: new Date().toISOString(),
@@ -72,7 +88,7 @@ export async function POST(request: Request) {
 
     await addDocument(workspaceId, docMeta);
 
-    // 5. Salvataggio Chunks su Supabase
+    // 5. Salvataggio Chunks
     const docChunks = chunks.map((content, i) => ({
       id: uuidv4(),
       workspaceId,
@@ -86,47 +102,39 @@ export async function POST(request: Request) {
 
     await addChunks(workspaceId, docChunks);
 
-    return NextResponse.json({ document: docMeta });
+    return NextResponse.json({
+      success: true,
+      document: docMeta,
+      preview: text.slice(0, 500)
+    });
+
   } catch (error: any) {
-    console.error('[API Upload] Errore fatale:', error);
-    return NextResponse.json({ 
-      error: 'Errore interno durante il caricamento', 
-      details: error.message 
-    }, { status: 500 });
+    console.error('UPLOAD_ERROR', error);
+    return NextResponse.json(
+      {
+        error: 'Errore durante il caricamento del documento',
+        detail: error?.message ?? 'Errore sconosciuto',
+      },
+      { status: 500 }
+    );
   }
 }
 
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const workspaceId = searchParams.get('workspaceId');
-
-    if (!workspaceId) {
-      return NextResponse.json({ error: 'Workspace ID mancante' }, { status: 400 });
-    }
-
-    const { getDocuments } = await import('@/lib/store');
-    const documents = await getDocuments(workspaceId);
-    return NextResponse.json({ documents });
-  } catch (error) {
-    return NextResponse.json({ error: 'Errore caricamento documenti' }, { status: 500 });
-  }
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const workspaceId = searchParams.get('workspaceId');
+  if (!workspaceId) return NextResponse.json({ error: 'Mancante workspaceId' }, { status: 400 });
+  const { getDocuments } = await import('@/lib/store');
+  const documents = await getDocuments(workspaceId);
+  return NextResponse.json({ documents });
 }
 
-export async function DELETE(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const workspaceId = searchParams.get('workspaceId');
-    const docId = searchParams.get('docId');
-
-    if (!workspaceId || !docId) {
-      return NextResponse.json({ error: 'Dati mancanti' }, { status: 400 });
-    }
-
-    const { removeDocument } = await import('@/lib/store');
-    await removeDocument(workspaceId, docId);
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    return NextResponse.json({ error: 'Errore eliminazione documento' }, { status: 500 });
-  }
+export async function DELETE(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const workspaceId = searchParams.get('workspaceId');
+  const docId = searchParams.get('docId');
+  if (!workspaceId || !docId) return NextResponse.json({ error: 'Dati mancanti' }, { status: 400 });
+  const { removeDocument } = await import('@/lib/store');
+  await removeDocument(workspaceId, docId);
+  return NextResponse.json({ success: true });
 }

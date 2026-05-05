@@ -59,21 +59,21 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
         body: formData,
       });
 
+      // --- Verifica Content-Type come richiesto ---
       const contentType = res.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
+      if (!contentType?.includes('application/json')) {
         const text = await res.text();
-        console.error('Risposta non JSON:', text);
-        throw new Error('Il server ha restituito un errore inaspettato (HTML). Controlla i log di Vercel.');
+        throw new Error("La API non ha restituito JSON: " + text.slice(0, 200));
       }
 
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.details || data.error || 'Errore durante l\'upload');
+        throw new Error(data.error || 'Errore upload');
       }
 
       setDocuments(prev => [...prev, data.document]);
-    } catch (err) {
+    } catch (err: any) {
       setError(err instanceof Error ? err.message : 'Errore sconosciuto');
     } finally {
       setUploading(false);
@@ -129,7 +129,7 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
           {uploading ? (
             <div className="flex flex-col items-center gap-2">
               <Loader2 size={24} className="text-violet-400 animate-spin" />
-              <span className="text-xs text-slate-400 font-medium">Elaborazione AI...</span>
+              <span className="text-xs text-slate-400 font-medium">Elaborazione...</span>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2">
