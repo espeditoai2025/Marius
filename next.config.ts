@@ -5,11 +5,9 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ['canvas'],
   
   // Configurazione per Turbopack (Next.js 15/16)
-  experimental: {
-    turbo: {
-      resolveAlias: {
-        canvas: 'empty',
-      },
+  turbo: {
+    resolveAlias: {
+      canvas: 'empty',
     },
   },
 
