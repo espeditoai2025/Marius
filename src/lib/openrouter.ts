@@ -6,7 +6,7 @@ import OpenAI from 'openai';
 
 // Modelli configurati
 export const CHAT_MODEL = 'openai/gpt-4o-mini';
-export const EMBEDDING_MODEL = 'openai/text-embedding-3-small'; // Ritorno al modello richiesto (1536 dim)
+export const EMBEDDING_MODEL = 'openai/text-embedding-3-large'; // Modello richiesto (3072 dimensioni)
 export const CLEANING_MODEL = 'openai/gpt-4o-mini';
 
 let clientInstance: OpenAI | null = null;
@@ -14,9 +14,6 @@ let clientInstance: OpenAI | null = null;
 function getClient() {
   if (!clientInstance) {
     const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) {
-      console.warn('[OpenRouter] ATTENZIONE: OPENROUTER_API_KEY non trovata nelle variabili d\'ambiente.');
-    }
     
     clientInstance = new OpenAI({
       apiKey: apiKey || '', 
@@ -67,6 +64,7 @@ export async function chatCompletion(
 export async function createEmbedding(text: string): Promise<number[]> {
   try {
     const client = getClient();
+    // Testo pulito per embedding
     const cleanText = text.replace(/\s+/g, ' ').slice(0, 8000);
 
     const response = await client.embeddings.create({
@@ -75,15 +73,14 @@ export async function createEmbedding(text: string): Promise<number[]> {
     });
 
     if (!response.data?.[0]?.embedding) {
-      throw new Error('Risposta embedding vuota');
+      throw new Error('Risposta embedding vuota da OpenRouter');
     }
 
     return response.data[0].embedding;
   } catch (error: any) {
-    // Estraiamo l'errore dettagliato da OpenRouter se disponibile
     const detail = error?.response?.data?.error?.message || error?.message || 'Errore tecnico';
     console.error(`[OpenRouter] Embedding Error (${EMBEDDING_MODEL}):`, detail);
-    throw new Error(`OpenRouter Embedding: ${detail}`);
+    throw new Error(`OpenRouter Embedding (${EMBEDDING_MODEL}): ${detail}`);
   }
 }
 
@@ -91,10 +88,10 @@ export async function createEmbedding(text: string): Promise<number[]> {
  * Genera embeddings per più testi in batch.
  */
 export async function createEmbeddingsBatch(texts: string[]): Promise<number[][]> {
-  const batchSize = 10;
+  const batchSize = 5; 
   const results: number[][] = [];
   
-  console.log(`[OpenRouter] Inizio batch embedding per ${texts.length} frammenti...`);
+  console.log(`[OpenRouter] Inizio batch embedding (${EMBEDDING_MODEL}) per ${texts.length} frammenti...`);
 
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
