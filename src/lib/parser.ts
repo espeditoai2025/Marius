@@ -21,13 +21,12 @@ export async function extractPdfText(buffer: Buffer): Promise<string> {
 
     const result = await extractText(arrayBuffer);
 
-    // Unisce le pagine con un doppio a capo per mantenere la struttura
     const extractedText = Array.isArray(result.text)
       ? result.text.filter(Boolean).join("\n\n")
       : (result.text as string) || "";
 
     console.log(
-      `[Parser] Estrazione PDF completata. Lunghezza: ${extractedText.length}`
+      `[Parser] Estrazione PDF completata. Pagine: ${Array.isArray(result.text) ? result.text.length : 1}. Caratteri: ${extractedText.length}`
     );
 
     if (!extractedText.trim()) {
@@ -37,17 +36,12 @@ export async function extractPdfText(buffer: Buffer): Promise<string> {
     return extractedText;
   } catch (error: any) {
     console.error("[Parser PDF] Errore:", error);
-
-    throw new Error(
-      `Errore durante l'estrazione del testo dal PDF: ${
-        error?.message || "errore sconosciuto"
-      }`
-    );
+    throw new Error(`Errore estrazione PDF: ${error?.message || "errore sconosciuto"}`);
   }
 }
 
 /**
- * Dispatcher principale: estrae testo in base al tipo MIME.
+ * Dispatcher principale.
  */
 export async function parseDocument(
   buffer: Buffer,
@@ -73,19 +67,34 @@ export async function parseDocument(
 
 /**
  * Pulisce il testo usando gpt-4o-mini.
+ * Per documenti molto grandi, pulisce solo i blocchi iniziali per non eccedere i limiti.
  */
 export async function cleanTextWithAI(rawText: string): Promise<string> {
+  // Se il testo è mastodontico (> 100k caratteri), la pulizia AI di tutto il testo 
+  // rischierebbe di fallire o metterci troppo. Puliamo solo se ragionevole.
+  if (rawText.length > 200000) {
+    console.warn('[Parser] Documento troppo grande per pulizia AI integrale. Procedo con testo grezzo.');
+    return rawText;
+  }
+
   try {
-    console.log('[Parser] Avvio pulizia AI...');
-    const textToClean = rawText.slice(0, 12000); 
+    console.log(`[Parser] Avvio pulizia AI per ${rawText.length} caratteri...`);
+    
+    // Per gpt-4o-mini possiamo pulire fino a ~50k caratteri in una volta sola in modo sicuro
+    const textToClean = rawText.slice(0, 50000); 
 
     const { content } = await chatCompletion([
-      { role: 'system', content: 'Sei un assistente specializzato nella pulizia di documenti finanziari. Restituisci solo Markdown pulito.' },
-      { role: 'user', content: `Pulisci e formatta questo testo estratto da un documento: \n\n${textToClean}` }
+      { role: 'system', content: 'Sei un assistente esperto in analisi di documenti bancari e finanziari. Il tuo compito è pulire il testo estratto da un PDF, rimuovendo intestazioni ripetitive, numeri di pagina e rumore. Formatta il contenuto in Markdown pulito mantenendo tabelle e dati numerici.' },
+      { role: 'user', content: `Pulisci e formatta questo testo: \n\n${textToClean}` }
     ], { 
       model: CLEANING_MODEL,
       temperature: 0
     });
+
+    // Se abbiamo troncato il testo per la pulizia, aggiungiamo il resto del testo grezzo
+    if (rawText.length > 50000) {
+      return content + "\n\n" + rawText.slice(50000);
+    }
 
     return content;
   } catch (error) {

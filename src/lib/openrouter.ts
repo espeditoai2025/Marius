@@ -6,7 +6,7 @@
 import OpenAI from 'openai';
 
 // Modelli configurati
-export const CHAT_MODEL = 'openai/gpt-4o-mini'; // Impostato come default come richiesto
+export const CHAT_MODEL = 'openai/gpt-4o-mini';
 export const EMBEDDING_MODEL = 'openai/text-embedding-3-small';
 export const CLEANING_MODEL = 'openai/gpt-4o-mini';
 
@@ -45,7 +45,7 @@ export async function chatCompletion(
     const response = await client.chat.completions.create({
       model: options?.model || CHAT_MODEL,
       messages,
-      temperature: options?.temperature ?? 0.7,
+      temperature: options?.temperature ?? 0,
       max_tokens: options?.maxTokens ?? 4096,
     });
 
@@ -65,11 +65,12 @@ export async function chatCompletion(
 export async function createEmbedding(text: string): Promise<number[]> {
   try {
     const client = getClient();
-    const truncated = text.slice(0, 32000);
+    // Pulisci il testo da newline eccessive e tronca
+    const cleanText = text.replace(/\n/g, ' ').slice(0, 8000);
 
     const response = await client.embeddings.create({
       model: EMBEDDING_MODEL,
-      input: truncated,
+      input: cleanText,
     });
 
     return response.data[0].embedding;
@@ -80,23 +81,34 @@ export async function createEmbedding(text: string): Promise<number[]> {
 }
 
 /**
- * Genera embeddings per più testi in batch.
+ * Genera embeddings per più testi in batch con gestione dei sottomoduli.
+ * Suddivide in gruppi da 10 per evitare timeout e limiti di payload.
  */
 export async function createEmbeddingsBatch(texts: string[]): Promise<number[][]> {
-  try {
-    const client = getClient();
-    const response = await client.embeddings.create({
-      model: EMBEDDING_MODEL,
-      input: texts.map(t => t.slice(0, 32000)),
-    });
+  const batchSize = 10;
+  const results: number[][] = [];
+  
+  console.log(`[OpenRouter] Avvio batch embedding per ${texts.length} frammenti...`);
 
-    return response.data.map(d => d.embedding);
-  } catch (error) {
-    console.error('[OpenRouter] Errore batch embedding:', error);
-    const results: number[][] = [];
-    for (const text of texts) {
-      results.push(await createEmbedding(text));
+  for (let i = 0; i < texts.length; i += batchSize) {
+    const batch = texts.slice(i, i + batchSize);
+    try {
+      const client = getClient();
+      const response = await client.embeddings.create({
+        model: EMBEDDING_MODEL,
+        input: batch.map(t => t.replace(/\n/g, ' ').slice(0, 8000)),
+      });
+      
+      const embeddings = response.data.sort((a, b) => a.index - b.index).map(d => d.embedding);
+      results.push(...embeddings);
+      console.log(`[OpenRouter] Completato batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(texts.length/batchSize)}`);
+    } catch (error) {
+      console.warn(`[OpenRouter] Errore batch ${i}, procedo uno alla volta per questo gruppo...`);
+      for (const text of batch) {
+        results.push(await createEmbedding(text));
+      }
     }
-    return results;
   }
+
+  return results;
 }
