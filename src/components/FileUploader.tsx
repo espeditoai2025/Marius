@@ -69,7 +69,8 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || 'Errore upload');
+        const errorMsg = data.detail ? `${data.error}\n${data.detail}` : (data.error || 'Errore upload');
+        throw new Error(errorMsg);
       }
 
       setDocuments(prev => [...prev, data.document]);
