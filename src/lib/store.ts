@@ -69,6 +69,11 @@ export interface DocumentChunk {
   metadata: Record<string, any>;
 }
 
+export function uploadsDir(workspaceId: string): string {
+  const path = require('path');
+  return path.join(process.cwd(), 'data', 'uploads', workspaceId);
+}
+
 // ==========================================
 // WORKSPACE CRUD
 // ==========================================
