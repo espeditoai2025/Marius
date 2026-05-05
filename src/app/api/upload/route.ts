@@ -27,31 +27,21 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
     let text = '';
 
-    // Gestione formati come richiesto
-    if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-      try {
-        // Import dinamico come suggerito
-        const pdfParse = (await import('pdf-parse')).default;
-        const parsed = await pdfParse(buffer);
-        text = parsed.text;
-      } catch (pdfErr: any) {
-        console.error('PDF_PARSE_ERROR', pdfErr);
-        return NextResponse.json({ 
-          error: 'Errore durante il parsing del PDF', 
-          detail: pdfErr.message 
-        }, { status: 500 });
+    // Import dinamico del parser per stabilità
+    const { extractPdfText, parseDocument } = await import('@/lib/parser');
+
+    try {
+      if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+        text = await extractPdfText(buffer);
+      } else {
+        text = await parseDocument(buffer, getMimeType(file.name));
       }
-    } else if (file.type === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.csv')) {
-      text = buffer.toString('utf-8');
-    } else if (file.name.endsWith('.docx')) {
-      const mammoth = await import('mammoth');
-      const result = await mammoth.extractRawText({ buffer });
-      text = result.value;
-    } else {
-      return NextResponse.json(
-        { error: 'Formato file non ancora supportato' },
-        { status: 400 }
-      );
+    } catch (parseError: any) {
+      console.error('PARSE_ERROR', parseError);
+      return NextResponse.json({ 
+        error: 'Errore durante il parsing del documento', 
+        detail: parseError.message 
+      }, { status: 500 });
     }
 
     if (!text || text.trim().length === 0) {
@@ -61,20 +51,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // --- Integrazione con RAG Pipeline (Supabase + Embeddings) ---
-    
-    // 1. Pulizia opzionale con AI (gpt-4o-mini)
-    const { parseDocument } = await import('@/lib/parser');
-    // Usiamo la funzione di pulizia che abbiamo già configurato
-    const cleanedText = text.length > 100 ? await (await import('@/lib/parser')).parseDocument(buffer, getMimeType(file.name)) : text;
-
-    // 2. Chunking
-    const chunks = chunkText(cleanedText, { chunkSize: 2500, overlap: 400 });
-
-    // 3. Embeddings
+    // --- RAG Pipeline ---
+    // Dividiamo il testo e generiamo embeddings
+    const chunks = chunkText(text, { chunkSize: 2500, overlap: 400 });
     const embeddings = await createEmbeddingsBatch(chunks);
 
-    // 4. Salvataggio Metadati
+    // Metadati
     const docId = uuidv4();
     const docMeta = {
       id: docId,
@@ -88,7 +70,7 @@ export async function POST(req: NextRequest) {
 
     await addDocument(workspaceId, docMeta);
 
-    // 5. Salvataggio Chunks
+    // Chunks
     const docChunks = chunks.map((content, i) => ({
       id: uuidv4(),
       workspaceId,
@@ -104,8 +86,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      document: docMeta,
-      preview: text.slice(0, 500)
+      document: docMeta
     });
 
   } catch (error: any) {

@@ -8,6 +8,43 @@ import { parse as csvParse } from 'csv-parse/sync';
 import { chatCompletion, CLEANING_MODEL } from './openrouter';
 
 /**
+ * Funzione robusta per l'estrazione di testo da PDF usando pdfjs-dist.
+ * Risolve l'errore "DOMMatrix is not defined".
+ */
+export async function extractPdfText(buffer: Buffer): Promise<string> {
+  try {
+    // Import dinamico del worker e della libreria (legacy build per Node.js)
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.js');
+    
+    // Uint8Array richiesto da pdfjs
+    const data = new Uint8Array(buffer);
+    const loadingTask = pdfjs.getDocument({
+      data,
+      useSystemFonts: true,
+      disableFontFace: true, // Importante per stabilità in Node.js
+    });
+
+    const pdf = await loadingTask.promise;
+    let fullText = '';
+
+    // Cicla su tutte le pagine
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => item.str)
+        .join(' ');
+      fullText += pageText + '\n';
+    }
+
+    return fullText;
+  } catch (error: any) {
+    console.error('[Parser PDF] Errore:', error);
+    throw new Error(`Errore estrazione PDF: ${error.message}`);
+  }
+}
+
+/**
  * Dispatcher principale: estrae testo in base al tipo MIME.
  */
 export async function parseDocument(
@@ -18,7 +55,7 @@ export async function parseDocument(
   
   switch (mimeType) {
     case 'application/pdf':
-      text = await parsePDF(buffer);
+      text = await extractPdfText(buffer);
       break;
     case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
       text = await parseDOCX(buffer);
@@ -39,31 +76,6 @@ export async function parseDocument(
   }
 
   return text;
-}
-
-/**
- * Estrae testo da un file PDF usando import dinamico per stabilità su Vercel.
- */
-async function parsePDF(buffer: Buffer): Promise<string> {
-  try {
-    // Import dinamico della libreria specifica
-    const { PDFParse } = await import('pdf-parse');
-    
-    let parser: any = null;
-    try {
-      parser = new PDFParse({ data: buffer });
-      await parser.load();
-      const result = await parser.getText();
-      return result.text || '';
-    } finally {
-      if (parser && parser.destroy) {
-        await parser.destroy();
-      }
-    }
-  } catch (error: any) {
-    console.error('[Parser] Errore parsing PDF:', error);
-    throw new Error(`Errore durante l'estrazione del testo dal PDF: ${error.message}`);
-  }
 }
 
 /**
