@@ -16,8 +16,11 @@ export async function extractPdfText(buffer: Buffer): Promise<string> {
   try {
     const { extractText } = await import('unpdf');
     
-    // Converte buffer in ArrayBuffer per unpdf
-    const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+    // Conversione sicura da Buffer a ArrayBuffer (evita SharedArrayBuffer)
+    const arrayBuffer: ArrayBuffer = new ArrayBuffer(buffer.byteLength);
+    const view = new Uint8Array(arrayBuffer);
+    view.set(buffer);
+
     const { text } = await extractText(arrayBuffer);
     
     console.log(`[Parser] Estrazione completata con unpdf. Lunghezza: ${text?.length || 0}`);
