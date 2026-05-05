@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     
-    // 1. Parsing del documento (direttamente dal buffer in memoria)
+    // 1. Parsing del documento
     const mimeType = getMimeType(file.name);
     let text = '';
     try {
@@ -35,14 +35,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Il file sembra essere vuoto o non leggibile' }, { status: 400 });
     }
 
-    // 2. Chunking
-    const chunks = chunkText(text, 2500, 400);
+    // 2. Chunking (Passando le opzioni come oggetto come richiesto dalla firma)
+    const chunks = chunkText(text, { chunkSize: 2500, overlap: 400 });
 
     // 3. Generazione Embeddings (Batch)
-    const chunkTexts = chunks.map(c => c.content);
+    // chunks è un array di stringhe (string[])
     let embeddings: number[][] = [];
     try {
-      embeddings = await createEmbeddingsBatch(chunkTexts);
+      embeddings = await createEmbeddingsBatch(chunks);
     } catch (embError) {
       console.error('[API Upload] Errore embeddings:', embError);
       return NextResponse.json({ error: 'Errore generazione embeddings AI' }, { status: 500 });
@@ -63,15 +63,15 @@ export async function POST(request: Request) {
     await addDocument(workspaceId, docMeta);
 
     // 5. Salvataggio Chunks su Supabase
-    const docChunks = chunks.map((c, i) => ({
+    const docChunks = chunks.map((content, i) => ({
       id: uuidv4(),
       workspaceId,
       sourceType: 'document' as const,
       sourceId: docId,
       sourceName: file.name,
-      content: c.content,
-      embedding: embeddings[i],
-      metadata: { page: c.page, index: i },
+      content: content,
+      embedding: embeddings[i] || [],
+      metadata: { index: i },
     }));
 
     await addChunks(workspaceId, docChunks);
