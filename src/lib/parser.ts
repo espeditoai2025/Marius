@@ -9,25 +9,40 @@ import { chatCompletion, CLEANING_MODEL } from './openrouter';
 
 /**
  * Estrazione testo da PDF usando unpdf.
- * Libreria in puro JS senza dipendenze native, perfetta per Vercel.
+ * Gestisce l'output come array di stringhe (una per pagina).
  */
 export async function extractPdfText(buffer: Buffer): Promise<string> {
-  console.log('[Parser] Avvio estrazione PDF con unpdf...');
   try {
-    const { extractText } = await import('unpdf');
-    
-    // Conversione sicura da Buffer a ArrayBuffer (evita SharedArrayBuffer)
+    const { extractText } = await import("unpdf");
+
     const arrayBuffer: ArrayBuffer = new ArrayBuffer(buffer.byteLength);
     const view = new Uint8Array(arrayBuffer);
     view.set(buffer);
 
-    const { text } = await extractText(arrayBuffer);
-    
-    console.log(`[Parser] Estrazione completata con unpdf. Lunghezza: ${text?.length || 0}`);
-    return text || '';
+    const result = await extractText(arrayBuffer);
+
+    // Unisce le pagine con un doppio a capo per mantenere la struttura
+    const extractedText = Array.isArray(result.text)
+      ? result.text.filter(Boolean).join("\n\n")
+      : (result.text as string) || "";
+
+    console.log(
+      `[Parser] Estrazione PDF completata. Lunghezza: ${extractedText.length}`
+    );
+
+    if (!extractedText.trim()) {
+      throw new Error("Il PDF non contiene testo estraibile");
+    }
+
+    return extractedText;
   } catch (error: any) {
-    console.error('[Parser PDF] Errore unpdf:', error);
-    throw new Error(`Errore unpdf: ${error.message}`);
+    console.error("[Parser PDF] Errore:", error);
+
+    throw new Error(
+      `Errore durante l'estrazione del testo dal PDF: ${
+        error?.message || "errore sconosciuto"
+      }`
+    );
   }
 }
 
