@@ -1,98 +1,56 @@
 /**
- * API Route: /api/upload
- * POST — Upload file, parsing, chunking, embedding
- * GET  — Lista documenti caricati
- * DELETE — Rimuovi documento
+ * api/upload — Caricamento e indicizzazione documenti
  */
 
-import { NextRequest, NextResponse } from 'next/server';
-import { v4 as uuidv4 } from 'uuid';
-import fs from 'fs/promises';
-import path from 'path';
-import { getDocuments, addDocument, removeDocument, addChunks, uploadsDir } from '@/lib/store';
+import { NextResponse } from 'next/server';
+import { addDocument, addChunks } from '@/lib/store';
 import { parseDocument, getMimeType } from '@/lib/parser';
 import { chunkText } from '@/lib/chunker';
 import { createEmbeddingsBatch } from '@/lib/openrouter';
-import type { DocumentChunk } from '@/lib/store';
+import { v4 as uuidv4 } from 'uuid';
 
-export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const workspaceId = searchParams.get('workspaceId');
-
-    if (!workspaceId) {
-      return NextResponse.json({ error: 'workspaceId obbligatorio' }, { status: 400 });
-    }
-
-    const documents = await getDocuments(workspaceId);
-    return NextResponse.json({ documents });
-  } catch (error) {
-    console.error('[API] Errore GET documents:', error);
-    return NextResponse.json({ error: 'Errore nel recupero documenti' }, { status: 500 });
-  }
-}
-
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
     const formData = await request.formData();
-    const file = formData.get('file') as File | null;
-    const workspaceId = formData.get('workspaceId') as string | null;
+    const file = formData.get('file') as File;
+    const workspaceId = formData.get('workspaceId') as string;
 
     if (!file || !workspaceId) {
-      return NextResponse.json({ error: 'File e workspaceId obbligatori' }, { status: 400 });
+      return NextResponse.json({ error: 'File o Workspace ID mancante' }, { status: 400 });
     }
 
-    // Validazione tipo file
-    const allowedExts = ['.pdf', '.docx', '.txt', '.csv'];
-    const ext = '.' + file.name.split('.').pop()?.toLowerCase();
-    if (!allowedExts.includes(ext)) {
-      return NextResponse.json({ error: `Tipo file non supportato. Formati: ${allowedExts.join(', ')}` }, { status: 400 });
-    }
-
-    // Validazione dimensione (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      return NextResponse.json({ error: 'File troppo grande (max 10MB)' }, { status: 400 });
-    }
-
-    // Leggi il contenuto del file
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    // Salva il file originale
-    const uploadDir = uploadsDir(workspaceId);
-    await fs.mkdir(uploadDir, { recursive: true });
-    const filePath = path.join(uploadDir, file.name);
-    await fs.writeFile(filePath, buffer);
-
-    // Parsing del documento
+    const buffer = Buffer.from(await file.arrayBuffer());
+    
+    // 1. Parsing del documento (direttamente dal buffer in memoria)
     const mimeType = getMimeType(file.name);
-    const text = await parseDocument(buffer, mimeType);
+    let text = '';
+    try {
+      text = await parseDocument(buffer, mimeType);
+    } catch (parseError) {
+      console.error('[API Upload] Errore parsing:', parseError);
+      return NextResponse.json({ error: 'Impossibile leggere il contenuto del file' }, { status: 500 });
+    }
 
     if (!text || text.trim().length === 0) {
-      return NextResponse.json({ error: 'Nessun testo estratto dal documento' }, { status: 400 });
+      return NextResponse.json({ error: 'Il file sembra essere vuoto o non leggibile' }, { status: 400 });
     }
 
-    // Chunking
-    const textChunks = chunkText(text);
+    // 2. Chunking
+    const chunks = chunkText(text, 2500, 400);
+
+    // 3. Generazione Embeddings (Batch)
+    const chunkTexts = chunks.map(c => c.content);
+    let embeddings: number[][] = [];
+    try {
+      embeddings = await createEmbeddingsBatch(chunkTexts);
+    } catch (embError) {
+      console.error('[API Upload] Errore embeddings:', embError);
+      return NextResponse.json({ error: 'Errore generazione embeddings AI' }, { status: 500 });
+    }
+
+    // 4. Salvataggio Metadati Documento
     const docId = uuidv4();
-
-    // Genera embeddings per batch
-    const embeddings = await createEmbeddingsBatch(textChunks);
-
-    // Crea i chunk con embeddings
-    const chunks: DocumentChunk[] = textChunks.map((content, i) => ({
-      id: uuidv4(),
-      workspaceId,
-      sourceType: 'document' as const,
-      sourceName: file.name,
-      sourceId: docId,
-      content,
-      embedding: embeddings[i] || [],
-      metadata: { filename: file.name, chunkIndex: String(i) },
-    }));
-
-    // Salva metadati documento e chunk
-    await addDocument(workspaceId, {
+    const docMeta = {
       id: docId,
       workspaceId,
       filename: file.name,
@@ -100,34 +58,65 @@ export async function POST(request: NextRequest) {
       size: file.size,
       chunksCount: chunks.length,
       uploadedAt: new Date().toISOString(),
-    });
+    };
 
-    await addChunks(workspaceId, chunks);
+    await addDocument(workspaceId, docMeta);
 
-    return NextResponse.json({
-      document: { id: docId, filename: file.name, chunksCount: chunks.length },
-    }, { status: 201 });
-  } catch (error) {
-    console.error('[API] Errore POST upload:', error);
-    const message = error instanceof Error ? error.message : 'Errore sconosciuto';
-    return NextResponse.json({ error: `Errore nell'upload: ${message}` }, { status: 500 });
+    // 5. Salvataggio Chunks su Supabase
+    const docChunks = chunks.map((c, i) => ({
+      id: uuidv4(),
+      workspaceId,
+      sourceType: 'document' as const,
+      sourceId: docId,
+      sourceName: file.name,
+      content: c.content,
+      embedding: embeddings[i],
+      metadata: { page: c.page, index: i },
+    }));
+
+    await addChunks(workspaceId, docChunks);
+
+    return NextResponse.json({ document: docMeta });
+  } catch (error: any) {
+    console.error('[API Upload] Errore generale:', error);
+    return NextResponse.json({ 
+      error: 'Errore interno durante l\'upload', 
+      details: error.message 
+    }, { status: 500 });
   }
 }
 
-export async function DELETE(request: NextRequest) {
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const workspaceId = searchParams.get('workspaceId');
+
+    if (!workspaceId) {
+      return NextResponse.json({ error: 'Workspace ID mancante' }, { status: 400 });
+    }
+
+    const { getDocuments } = await import('@/lib/store');
+    const documents = await getDocuments(workspaceId);
+    return NextResponse.json({ documents });
+  } catch (error) {
+    return NextResponse.json({ error: 'Errore caricamento documenti' }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const workspaceId = searchParams.get('workspaceId');
     const docId = searchParams.get('docId');
 
     if (!workspaceId || !docId) {
-      return NextResponse.json({ error: 'workspaceId e docId obbligatori' }, { status: 400 });
+      return NextResponse.json({ error: 'Dati mancanti' }, { status: 400 });
     }
 
+    const { removeDocument } = await import('@/lib/store');
     await removeDocument(workspaceId, docId);
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('[API] Errore DELETE document:', error);
-    return NextResponse.json({ error: 'Errore nella rimozione del documento' }, { status: 500 });
+    return NextResponse.json({ error: 'Errore eliminazione documento' }, { status: 500 });
   }
 }
