@@ -69,6 +69,12 @@ ISTRUZIONI TECNICHE DI SUPPORTO:
 - Cita i nomi dei documenti usati.
 - NOTA SUL LAYOUT: I documenti potrebbero contenere tabelle dove i nomi dei servizi e i relativi prezzi sono separati. Cerca di ricostruire l'associazione corretta basandoti sull'ordine di apparizione.
 
+FORMATTAZIONE RISPOSTA (FINANZIARIA):
+- Usa TABELLE MARKDOWN per presentare elenchi di costi, tariffe o confronti.
+- Metti in GRASSETTO tutti gli importi monetari (es. **25,50 €**).
+- Usa titoli di sezione chiari (es. ### Costi del Conto).
+- Se utile, crea una sezione finale "Sintesi per il Decision Maker" con i punti chiave.
+
 --- CONTESTO DOCUMENTI ---
 ${contextText || 'Nessun documento trovato per questa ricerca.'}
 --- FINE CONTESTO ---
