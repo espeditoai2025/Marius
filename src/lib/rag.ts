@@ -1,6 +1,6 @@
 /**
  * rag.ts — Pipeline RAG (Retrieval-Augmented Generation)
- * Ottimizzato per Supabase pgvector.
+ * Ottimizzato per precisione finanziaria e grandi contesti.
  */
 
 import { chatCompletion, createEmbedding } from './openrouter';
@@ -22,16 +22,17 @@ export async function executeRAGPipeline(
 ): Promise<RAGResult> {
   // 1. Carica il prompt agente
   const agentPrompt = await getPrompt(workspaceId);
-  const systemPrompt = agentPrompt?.content || 'Sei un assistente AI finanziario esperto. Rispondi in modo preciso e professionale basandoti sul contesto fornito.';
+  const baseSystemPrompt = agentPrompt?.content || 'Sei un assistente AI finanziario esperto.';
 
   // 2. Genera embedding della domanda
   const queryEmbedding = await createEmbedding(userQuestion);
 
   // 3. Cerca i chunk più rilevanti direttamente su Supabase (pgvector)
+  // Aumentiamo match_count a 15 per coprire più contesto in documenti densi
   const { data: results, error } = await supabase.rpc('match_chunks', {
     query_embedding: queryEmbedding,
-    match_threshold: 0.3, // Soglia di rilevanza
-    match_count: 5,       // Top 5 chunks
+    match_threshold: 0.1, // Molto più permissivo per non perdere dati numerici
+    match_count: 15,       // Top 15 chunks (visione ampia)
     p_workspace_id: workspaceId
   });
 
@@ -47,42 +48,41 @@ export async function executeRAGPipeline(
     sources = results.map((r: any) => ({
       type: r.source_type,
       name: r.source_name,
-      snippet: r.content.slice(0, 300) + '...',
+      snippet: r.content.slice(0, 400) + '...',
       relevance: Math.round(r.score * 100) / 100,
     }));
 
-    contextText = results
-      .map((r: any, i: number) => `[Fonte ${i + 1}: ${r.source_name}]\n${r.content}`)
+    // Ordiniamo per indice metadati per mantenere la coerenza del testo se possibile
+    const sortedResults = [...results].sort((a, b) => (a.metadata?.index || 0) - (b.metadata?.index || 0));
+
+    contextText = sortedResults
+      .map((r: any, i: number) => `[DOCUMENTO: ${r.source_name}]\n${r.content}`)
       .join('\n\n---\n\n');
   }
 
-  // 5. Costruisci il prompt finale
-  const finalPrompt = buildRAGPrompt(systemPrompt, contextText, userQuestion);
+  // 5. Costruisci il prompt finale (più rigido contro le allucinazioni)
+  const systemPrompt = `
+${baseSystemPrompt}
+
+ISTRUZIONI CRITICHE:
+- Rispondi basandoti ESCLUSIVAMENTE sui documenti forniti nel CONTESTO sotto.
+- Se le informazioni non sono presenti nei documenti, dichiara onestamente che non le trovi.
+- NON inventare nomi di banche o cifre basandoti sulla tua conoscenza generale (es. non confondere BPM con BPER).
+- Se i documenti parlano di "Banco BPM", rispondi solo su "Banco BPM".
+- Cita sempre il nome del documento da cui trai l'informazione.
+
+--- CONTESTO DOCUMENTI ---
+${contextText || 'NESSUN DOCUMENTO TROVATO NEL DATABASE.'}
+--- FINE CONTESTO ---
+  `.trim();
 
   // 6. Chiama il modello AI
   const { content, model } = await chatCompletion([
-    { role: 'system', content: finalPrompt.system },
-    { role: 'user', content: finalPrompt.user },
-  ]);
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userQuestion },
+  ], {
+    temperature: 0, // Zero creatività, massima precisione
+  });
 
   return { answer: content, sources, model };
-}
-
-/**
- * Costruisce il prompt strutturato per la chiamata AI.
- */
-function buildRAGPrompt(
-  agentPrompt: string,
-  context: string,
-  userQuestion: string
-): { system: string; user: string } {
-  let system = agentPrompt;
-
-  if (context) {
-    system += `\n\n--- CONTESTO DOCUMENTI ---\nUsa le seguenti informazioni per rispondere alla domanda. Se le informazioni non sono sufficienti, dillo chiaramente. Cita le fonti quando possibile.\n\n${context}\n--- FINE CONTESTO ---`;
-  } else {
-    system += '\n\nNota: Non ci sono documenti caricati nel workspace. Rispondi basandoti sulle tue conoscenze generali.';
-  }
-
-  return { system, user: userQuestion };
 }
