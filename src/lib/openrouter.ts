@@ -5,7 +5,7 @@
 import OpenAI from 'openai';
 
 // Modelli configurati
-export const CHAT_MODEL = 'openai/gpt-4o-mini';
+export const CHAT_MODEL = 'deepseek/deepseek-chat';
 export const EMBEDDING_MODEL = 'openai/text-embedding-3-small'; // Ritorno definitivo a 1536 dimensioni
 export const CLEANING_MODEL = 'openai/gpt-4o-mini';
 
