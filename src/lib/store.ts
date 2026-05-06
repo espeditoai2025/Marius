@@ -250,12 +250,23 @@ export async function addDocument(workspaceId: string, doc: DocumentMeta): Promi
 }
 
 export async function removeDocument(workspaceId: string, docId: string): Promise<void> {
-  const { error } = await supabase
+  // 1. Elimina prima tutti i chunk associati per evitare "fantasmi" nel RAG
+  const { error: chunkError } = await supabase
+    .from('chunks')
+    .delete()
+    .eq('source_id', docId);
+
+  if (chunkError) {
+    console.error('[Store] Errore eliminazione chunk:', chunkError);
+  }
+
+  // 2. Elimina il metadato del documento
+  const { error: docError } = await supabase
     .from('documents')
     .delete()
     .eq('id', docId);
 
-  if (error) throw error;
+  if (docError) throw docError;
 }
 
 // ==========================================
