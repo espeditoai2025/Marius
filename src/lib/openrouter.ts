@@ -6,7 +6,7 @@ import OpenAI from 'openai';
 
 // Modelli configurati
 export const CHAT_MODEL = 'openai/gpt-4o-mini';
-export const EMBEDDING_MODEL = 'openai/text-embedding-3-large'; // Modello richiesto (3072 dimensioni)
+export const EMBEDDING_MODEL = 'openai/text-embedding-3-small'; // Ritorno definitivo a 1536 dimensioni
 export const CLEANING_MODEL = 'openai/gpt-4o-mini';
 
 let clientInstance: OpenAI | null = null;
@@ -64,7 +64,7 @@ export async function chatCompletion(
 export async function createEmbedding(text: string): Promise<number[]> {
   try {
     const client = getClient();
-    // Testo pulito per embedding
+    // Pulizia testo per embedding
     const cleanText = text.replace(/\s+/g, ' ').slice(0, 8000);
 
     const response = await client.embeddings.create({
@@ -73,7 +73,7 @@ export async function createEmbedding(text: string): Promise<number[]> {
     });
 
     if (!response.data?.[0]?.embedding) {
-      throw new Error('Risposta embedding vuota da OpenRouter');
+      throw new Error('Risposta embedding vuota');
     }
 
     return response.data[0].embedding;
@@ -88,7 +88,7 @@ export async function createEmbedding(text: string): Promise<number[]> {
  * Genera embeddings per più testi in batch.
  */
 export async function createEmbeddingsBatch(texts: string[]): Promise<number[][]> {
-  const batchSize = 5; 
+  const batchSize = 10;
   const results: number[][] = [];
   
   console.log(`[OpenRouter] Inizio batch embedding (${EMBEDDING_MODEL}) per ${texts.length} frammenti...`);
