@@ -69,11 +69,6 @@ export interface DocumentChunk {
   metadata: Record<string, any>;
 }
 
-export function uploadsDir(workspaceId: string): string {
-  const path = require('path');
-  return path.join(process.cwd(), 'data', 'uploads', workspaceId);
-}
-
 // ==========================================
 // WORKSPACE CRUD
 // ==========================================
@@ -191,7 +186,7 @@ export async function addChatMessage(workspaceId: string, message: ChatMessage):
   const { error } = await supabase
     .from('chat_messages')
     .insert([{
-      id: message.id.includes('-') ? message.id : undefined, // Usa UUID se valido, altrimenti lascia generare a Supabase
+      id: message.id.includes('-') ? message.id : undefined,
       workspace_id: workspaceId,
       role: message.role,
       content: message.content,
@@ -235,10 +230,13 @@ export async function getDocuments(workspaceId: string): Promise<DocumentMeta[]>
   }));
 }
 
+/**
+ * Aggiunge o aggiorna un documento (UPSERT)
+ */
 export async function addDocument(workspaceId: string, doc: DocumentMeta): Promise<void> {
   const { error } = await supabase
     .from('documents')
-    .insert([{
+    .upsert([{
       id: doc.id,
       workspace_id: workspaceId,
       filename: doc.filename,
@@ -246,7 +244,7 @@ export async function addDocument(workspaceId: string, doc: DocumentMeta): Promi
       size: doc.size,
       chunks_count: doc.chunksCount,
       created_at: doc.uploadedAt
-    }]);
+    }], { onConflict: 'id' });
 
   if (error) throw error;
 }
@@ -285,14 +283,14 @@ export async function getUrls(workspaceId: string): Promise<UrlMeta[]> {
 export async function addUrl(workspaceId: string, url: UrlMeta): Promise<void> {
   const { error } = await supabase
     .from('urls')
-    .insert([{
+    .upsert([{
       id: url.id,
       workspace_id: workspaceId,
       url: url.url,
       title: url.title,
       chunks_count: url.chunksCount,
       created_at: url.ingestedAt
-    }]);
+    }], { onConflict: 'id' });
 
   if (error) throw error;
 }
