@@ -55,10 +55,11 @@ export async function POST(req: NextRequest) {
       await addDocument(workspaceId, docMeta);
     } catch (dbError: any) {
       console.error(`[API Upload][${requestId}] Errore DB Documenti:`, dbError);
-      return NextResponse.json({ error: 'Errore Database (Documenti)', detail: dbError.message || 'Controlla che la tabella "documents" esista.' }, { status: 500 });
+      return NextResponse.json({ error: 'Errore Database (Documenti)', detail: dbError.message }, { status: 500 });
     }
 
-    const chunks = chunkText(rawText, { chunkSize: 1500, overlap: 200 });
+    // OTTIMIZZAZIONE TABELLE: Aumentiamo chunkSize a 4000 per tenere vicini label e valori
+    const chunks = chunkText(rawText, { chunkSize: 4000, overlap: 600 });
 
     // 1. Generazione Embeddings (AI)
     let embeddings: number[][] = [];
@@ -83,17 +84,12 @@ export async function POST(req: NextRequest) {
       }));
 
       await addChunks(workspaceId, docChunks);
-
-      // Aggiorniamo il conteggio
       await addDocument(workspaceId, { ...docMeta, chunksCount: chunks.length });
 
       return NextResponse.json({ success: true, document: { ...docMeta, chunksCount: chunks.length } });
     } catch (dbError: any) {
       console.error(`[API Upload][${requestId}] Errore DB Chunks:`, dbError);
-      return NextResponse.json({ 
-        error: 'Errore Salvataggio Database (Chunks)', 
-        detail: `${dbError.message || 'Errore sconosciuto'}. Verifica se la tabella "chunks" esiste e se la dimensione del vettore è corretta.` 
-      }, { status: 500 });
+      return NextResponse.json({ error: 'Errore Salvataggio Database (Chunks)', detail: dbError.message }, { status: 500 });
     }
 
   } catch (error: any) {

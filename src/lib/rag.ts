@@ -67,6 +67,7 @@ ISTRUZIONI TECNICHE DI SUPPORTO:
 - Rispondi in modo preciso basandoti sui dati estratti.
 - Se il prompt della DIRETTIVA PRIMARIA contrasta con la conoscenza generale, segui sempre la DIRETTIVA PRIMARIA e i DOCUMENTI.
 - Cita i nomi dei documenti usati.
+- NOTA SUL LAYOUT: I documenti potrebbero contenere tabelle dove i nomi dei servizi e i relativi prezzi sono separati. Cerca di ricostruire l'associazione corretta basandoti sull'ordine di apparizione.
 
 --- CONTESTO DOCUMENTI ---
 ${contextText || 'Nessun documento trovato per questa ricerca.'}
