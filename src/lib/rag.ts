@@ -11,6 +11,7 @@ export interface RAGResult {
   answer: string;
   sources: Source[];
   model: string;
+  context: string;
 }
 
 /**
@@ -104,5 +105,5 @@ ${contextText || 'Nessun documento trovato per questa ricerca.'}
     temperature: agentTemperature, // Impostata dall'utente per workspace (0 = massima precisione)
   });
 
-  return { answer: content, sources, model };
+  return { answer: content, sources, model, context: contextText };
 }

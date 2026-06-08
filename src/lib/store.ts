@@ -438,3 +438,110 @@ export async function getChunkProgress(sourceId: string): Promise<{ total: numbe
   `;
   return { total: rows[0]?.total ?? 0, done: rows[0]?.done ?? 0 };
 }
+
+// ==========================================
+// VALUTAZIONE (test set + LLM-judge)
+// ==========================================
+
+export interface EvalQuestion {
+  id: string;
+  workspaceId: string;
+  question: string;
+  expected?: string;
+  createdAt: string;
+}
+
+export interface EvalRun {
+  id: string;
+  workspaceId: string;
+  status: string;
+  avgScore: number | null;
+  total: number;
+  createdAt: string;
+}
+
+export interface EvalResultRow {
+  id: string;
+  runId: string;
+  question: string;
+  answer: string;
+  score: number;
+  groundedness: number;
+  correctness: number;
+  feedback: string;
+  createdAt: string;
+}
+
+export async function getEvalQuestions(workspaceId: string): Promise<EvalQuestion[]> {
+  const rows = await sql`
+    SELECT * FROM eval_questions WHERE workspace_id = ${workspaceId} ORDER BY created_at ASC
+  `;
+  return rows.map(r => ({
+    id: r.id,
+    workspaceId: r.workspace_id,
+    question: r.question,
+    expected: r.expected ?? undefined,
+    createdAt: r.created_at,
+  }));
+}
+
+export async function getEvalQuestion(workspaceId: string, questionId: string): Promise<EvalQuestion | null> {
+  const rows = await sql`
+    SELECT * FROM eval_questions WHERE id = ${questionId} AND workspace_id = ${workspaceId}
+  `;
+  const r = rows[0];
+  if (!r) return null;
+  return { id: r.id, workspaceId: r.workspace_id, question: r.question, expected: r.expected ?? undefined, createdAt: r.created_at };
+}
+
+export async function addEvalQuestion(workspaceId: string, q: { id: string; question: string; expected?: string }): Promise<void> {
+  await sql`
+    INSERT INTO eval_questions (id, workspace_id, question, expected)
+    VALUES (${q.id}, ${workspaceId}, ${q.question}, ${q.expected ?? null})
+  `;
+}
+
+export async function removeEvalQuestion(workspaceId: string, questionId: string): Promise<void> {
+  await sql`DELETE FROM eval_questions WHERE id = ${questionId} AND workspace_id = ${workspaceId}`;
+}
+
+export async function createEvalRun(workspaceId: string, runId: string, total: number): Promise<void> {
+  await sql`
+    INSERT INTO eval_runs (id, workspace_id, status, total)
+    VALUES (${runId}, ${workspaceId}, 'running', ${total})
+  `;
+}
+
+export async function addEvalResult(runId: string, r: {
+  id: string; question: string; answer: string;
+  score: number; groundedness: number; correctness: number; feedback: string;
+}): Promise<void> {
+  await sql`
+    INSERT INTO eval_results (id, run_id, question, answer, score, groundedness, correctness, feedback)
+    VALUES (${r.id}, ${runId}, ${r.question}, ${r.answer}, ${r.score}, ${r.groundedness}, ${r.correctness}, ${r.feedback})
+  `;
+}
+
+export async function finalizeEvalRun(runId: string): Promise<{ avgScore: number; total: number }> {
+  const rows = await sql`
+    SELECT avg(score)::real AS avg, count(*)::int AS total FROM eval_results WHERE run_id = ${runId}
+  `;
+  const avgScore = Math.round(rows[0]?.avg ?? 0);
+  const total = rows[0]?.total ?? 0;
+  await sql`UPDATE eval_runs SET status = 'done', avg_score = ${avgScore}, total = ${total} WHERE id = ${runId}`;
+  return { avgScore, total };
+}
+
+export async function getEvalRuns(workspaceId: string, limit = 10): Promise<EvalRun[]> {
+  const rows = await sql`
+    SELECT * FROM eval_runs WHERE workspace_id = ${workspaceId} ORDER BY created_at DESC LIMIT ${limit}
+  `;
+  return rows.map(r => ({
+    id: r.id,
+    workspaceId: r.workspace_id,
+    status: r.status,
+    avgScore: r.avg_score,
+    total: r.total,
+    createdAt: r.created_at,
+  }));
+}

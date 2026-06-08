@@ -99,3 +99,38 @@ CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source_id);
 -- Indice vettoriale per la ricerca semantica (cosine)
 CREATE INDEX IF NOT EXISTS idx_chunks_embedding
   ON chunks USING hnsw (embedding vector_cosine_ops);
+
+-- ------------------------------------------------------------
+-- Valutazione (test set + LLM-judge)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS eval_questions (
+  id           uuid PRIMARY KEY,
+  workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  question     text NOT NULL,
+  expected     text,
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_eval_questions_workspace ON eval_questions(workspace_id);
+
+CREATE TABLE IF NOT EXISTS eval_runs (
+  id           uuid PRIMARY KEY,
+  workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  status       text NOT NULL DEFAULT 'running', -- 'running' | 'done'
+  avg_score    real,
+  total        integer NOT NULL DEFAULT 0,
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_eval_runs_workspace ON eval_runs(workspace_id);
+
+CREATE TABLE IF NOT EXISTS eval_results (
+  id           uuid PRIMARY KEY,
+  run_id       uuid NOT NULL REFERENCES eval_runs(id) ON DELETE CASCADE,
+  question     text NOT NULL,
+  answer       text,
+  score        real,
+  groundedness real,
+  correctness  real,
+  feedback     text,
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_eval_results_run ON eval_results(run_id);

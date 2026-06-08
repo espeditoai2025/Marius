@@ -6,6 +6,8 @@
  */
 
 import { useState, use } from 'react';
+import Link from "next/link";
+import { Gauge } from "lucide-react";
 import WorkspaceSidebar from "@/components/WorkspaceSidebar";
 import PromptEditor from "@/components/PromptEditor";
 import ChatTester from "@/components/ChatTester";
@@ -31,6 +33,14 @@ export default function WorkspacePage({ params }: { params: Promise<{ id: string
 
       {/* Colonna 2: Core Testing (Center) */}
       <main className="flex-1 flex flex-col gap-4 p-4 overflow-y-auto">
+        <div className="flex justify-end animate-fade-in">
+          <Link
+            href={`/workspace/${id}/eval`}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-emerald-300 text-xs font-medium hover:bg-emerald-500/15 transition-all"
+          >
+            <Gauge size={14} /> Valutazione
+          </Link>
+        </div>
         <div className="animate-fade-in delay-75">
           <PromptEditor workspaceId={id} />
         </div>
