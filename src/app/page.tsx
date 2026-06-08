@@ -27,8 +27,8 @@ const FEATURES = [
     icon: Gauge,
     color: "emerald",
     title: "Valutazione & ottimizzazione",
-    desc: "Testa le risposte su set di domande, confronta le versioni di prompt e affina con metriche, non a occhio.",
-    tag: "Presto",
+    desc: "Testa le risposte su set di domande con un giudice AI (Claude): punteggi di groundedness e correttezza, media e storico per ottimizzare con metriche, non a occhio.",
+    tag: null,
   },
 ] as const;
 
