@@ -20,6 +20,7 @@ export interface Workspace {
 export interface AgentPrompt {
   workspaceId: string;
   content: string;
+  temperature: number;
   updatedAt: string;
 }
 
@@ -137,16 +138,19 @@ export async function getPrompt(workspaceId: string): Promise<AgentPrompt | null
   return {
     workspaceId: data.workspace_id,
     content: data.content,
+    temperature: data.temperature ?? 0,
     updatedAt: data.updated_at,
   };
 }
 
 export async function savePrompt(prompt: AgentPrompt): Promise<void> {
+  // Clamp di sicurezza: la temperatura resta nell'intervallo [0, 1].
+  const temperature = Math.min(1, Math.max(0, Number(prompt.temperature) || 0));
   await sql`
-    INSERT INTO prompts (workspace_id, content, updated_at)
-    VALUES (${prompt.workspaceId}, ${prompt.content}, ${new Date().toISOString()})
+    INSERT INTO prompts (workspace_id, content, temperature, updated_at)
+    VALUES (${prompt.workspaceId}, ${prompt.content}, ${temperature}, ${new Date().toISOString()})
     ON CONFLICT (workspace_id)
-    DO UPDATE SET content = EXCLUDED.content, updated_at = EXCLUDED.updated_at
+    DO UPDATE SET content = EXCLUDED.content, temperature = EXCLUDED.temperature, updated_at = EXCLUDED.updated_at
   `;
 }
 

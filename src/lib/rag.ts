@@ -23,6 +23,7 @@ export async function executeRAGPipeline(
   // 1. Carica il prompt personalizzato dell'agente (Direttiva Primaria)
   const agentPrompt = await getPrompt(workspaceId);
   const userCustomInstructions = agentPrompt?.content || 'Sei un assistente AI finanziario esperto.';
+  const agentTemperature = agentPrompt?.temperature ?? 0;
 
   // 2. Genera embedding della domanda
   const queryEmbedding = await createEmbedding(userQuestion);
@@ -100,7 +101,7 @@ ${contextText || 'Nessun documento trovato per questa ricerca.'}
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userQuestion },
   ], {
-    temperature: 0, // Massima precisione
+    temperature: agentTemperature, // Impostata dall'utente per workspace (0 = massima precisione)
   });
 
   return { answer: content, sources, model };

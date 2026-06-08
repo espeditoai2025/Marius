@@ -25,8 +25,11 @@ CREATE TABLE IF NOT EXISTS workspaces (
 CREATE TABLE IF NOT EXISTS prompts (
   workspace_id uuid PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
   content      text NOT NULL,
+  temperature  real NOT NULL DEFAULT 0,
   updated_at   timestamptz NOT NULL DEFAULT now()
 );
+-- Migrazione per DB esistenti: aggiunge la colonna se manca.
+ALTER TABLE prompts ADD COLUMN IF NOT EXISTS temperature real NOT NULL DEFAULT 0;
 
 -- ------------------------------------------------------------
 -- Cronologia chat

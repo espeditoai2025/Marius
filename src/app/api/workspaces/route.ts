@@ -47,6 +47,7 @@ export async function POST(request: Request) {
       await savePrompt({
         workspaceId: workspace.id,
         content: 'Sei un assistente AI finanziario esperto. Analizza i dati forniti e rispondi in modo professionale, citando le fonti se disponibili.',
+        temperature: 0,
         updatedAt: new Date().toISOString(),
       });
     } catch (dbError: any) {

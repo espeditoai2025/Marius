@@ -25,7 +25,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { workspaceId, content } = body;
+    const { workspaceId, content, temperature } = body;
 
     if (!workspaceId || content === undefined) {
       return NextResponse.json({ error: 'Dati mancanti' }, { status: 400 });
@@ -35,6 +35,7 @@ export async function POST(request: Request) {
       await savePrompt({
         workspaceId,
         content,
+        temperature: typeof temperature === 'number' ? temperature : 0,
         updatedAt: new Date().toISOString(),
       });
     } catch (dbError: any) {
