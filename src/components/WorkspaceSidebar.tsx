@@ -5,9 +5,10 @@
  */
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import {
-  FolderOpen, Plus, Trash2, FlaskConical, ChevronRight, LogOut,
+  FolderOpen, Plus, Trash2, FlaskConical, ChevronRight, LogOut, BookOpen,
 } from 'lucide-react';
 
 interface Workspace {
@@ -218,8 +219,14 @@ export default function WorkspaceSidebar() {
         )}
       </div>
 
-      {/* Footer: utente */}
-      <div className="p-3 border-t border-white/5">
+      {/* Footer */}
+      <div className="p-3 border-t border-white/5 space-y-1">
+        <Link
+          href="/guida"
+          className="flex items-center gap-2 px-2 py-2 rounded-xl text-slate-400 hover:bg-white/5 hover:text-white transition-all text-[12px]"
+        >
+          <BookOpen size={14} /> Guida
+        </Link>
         {userEmail ? (
           <div className="flex items-center gap-2 px-2 py-2 rounded-xl hover:bg-white/5 transition-all">
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500/30 to-blue-500/30 flex items-center justify-center flex-shrink-0 text-[11px] font-semibold text-violet-200 uppercase">

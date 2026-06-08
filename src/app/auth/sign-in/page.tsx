@@ -66,6 +66,11 @@ export default function SignInPage() {
             Registrati
           </Link>
         </p>
+        <p className="text-center text-xs text-slate-600 mt-2">
+          <Link href="/guida" className="hover:text-slate-400 underline underline-offset-2">
+            Cos&apos;è Agent Lab? Leggi la guida
+          </Link>
+        </p>
       </div>
     </div>
   );

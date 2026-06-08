@@ -8,16 +8,26 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-export default function Markdown({ content }: { content: string }) {
+export default function Markdown({ content, variant = 'chat' }: { content: string; variant?: 'chat' | 'doc' }) {
+  const doc = variant === 'doc';
+  const cls = {
+    wrap: doc
+      ? 'text-[15px] leading-relaxed text-slate-300 [&>*:first-child]:mt-0'
+      : 'text-sm leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
+    h1: doc ? 'text-2xl font-bold text-white mt-7 mb-3' : 'text-base font-bold text-white mt-3 mb-1.5',
+    h2: doc ? 'text-lg font-bold text-white mt-7 mb-2' : 'text-sm font-bold text-white mt-3 mb-1.5',
+    h3: doc ? 'text-base font-semibold text-violet-300 mt-5 mb-1.5' : 'text-sm font-semibold text-violet-300 mt-3 mb-1',
+    p: doc ? 'my-2.5 leading-relaxed' : 'my-1.5',
+  };
   return (
-    <div className="text-sm leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+    <div className={cls.wrap}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          h1: ({ children }) => <h1 className="text-base font-bold text-white mt-3 mb-1.5">{children}</h1>,
-          h2: ({ children }) => <h2 className="text-sm font-bold text-white mt-3 mb-1.5">{children}</h2>,
-          h3: ({ children }) => <h3 className="text-sm font-semibold text-violet-300 mt-3 mb-1">{children}</h3>,
-          p: ({ children }) => <p className="my-1.5">{children}</p>,
+          h1: ({ children }) => <h1 className={cls.h1}>{children}</h1>,
+          h2: ({ children }) => <h2 className={cls.h2}>{children}</h2>,
+          h3: ({ children }) => <h3 className={cls.h3}>{children}</h3>,
+          p: ({ children }) => <p className={cls.p}>{children}</p>,
           ul: ({ children }) => <ul className="list-disc pl-5 my-1.5 space-y-1">{children}</ul>,
           ol: ({ children }) => <ol className="list-decimal pl-5 my-1.5 space-y-1">{children}</ol>,
           li: ({ children }) => <li className="leading-relaxed">{children}</li>,
