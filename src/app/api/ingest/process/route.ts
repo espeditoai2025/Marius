@@ -14,6 +14,7 @@ import {
   setUrlStatus,
 } from '@/lib/store';
 import { createEmbeddingsBatch } from '@/lib/openrouter';
+import { requireWorkspace } from '@/lib/auth/guard';
 
 export const runtime = 'nodejs';
 
@@ -22,11 +23,14 @@ const BATCH = 20;
 
 export async function POST(req: NextRequest) {
   try {
-    const { sourceId, sourceType } = await req.json();
+    const { sourceId, sourceType, workspaceId } = await req.json();
 
     if (!sourceId) {
       return NextResponse.json({ error: 'sourceId mancante' }, { status: 400 });
     }
+
+    const guard = await requireWorkspace(workspaceId);
+    if ('res' in guard) return guard.res;
 
     const setStatus = sourceType === 'url' ? setUrlStatus : setDocumentStatus;
 

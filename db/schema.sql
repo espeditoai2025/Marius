@@ -15,9 +15,13 @@ CREATE TABLE IF NOT EXISTS workspaces (
   id          uuid PRIMARY KEY,
   name        text NOT NULL,
   description text NOT NULL DEFAULT '',
+  owner_id    text, -- id utente Neon Auth (neon_auth.users_sync)
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
+-- Migrazione per DB esistenti: collega i workspace all'utente proprietario.
+ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS owner_id text;
+CREATE INDEX IF NOT EXISTS idx_workspaces_owner ON workspaces(owner_id);
 
 -- ------------------------------------------------------------
 -- Prompt dell'agente (uno per workspace)

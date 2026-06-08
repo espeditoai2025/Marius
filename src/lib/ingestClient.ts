@@ -13,6 +13,7 @@ export interface IngestProgress {
 export async function processIngestion(
   sourceId: string,
   sourceType: 'document' | 'url',
+  workspaceId: string,
   onProgress?: (p: IngestProgress) => void
 ): Promise<void> {
   let lastDone = -1;
@@ -22,7 +23,7 @@ export async function processIngestion(
     const res = await fetch('/api/ingest/process', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceId, sourceType }),
+      body: JSON.stringify({ sourceId, sourceType, workspaceId }),
     });
 
     if (!res.ok) {

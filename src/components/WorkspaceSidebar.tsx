@@ -7,7 +7,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import {
-  FolderOpen, Plus, Trash2, FlaskConical, ChevronRight,
+  FolderOpen, Plus, Trash2, FlaskConical, ChevronRight, LogOut,
 } from 'lucide-react';
 
 interface Workspace {
@@ -23,22 +23,51 @@ export default function WorkspaceSidebar() {
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [loading, setLoading] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
   const router = useRouter();
   const params = useParams();
   const activeId = params?.id as string;
 
   useEffect(() => {
     fetchWorkspaces();
+    fetchMe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function fetchWorkspaces() {
     try {
       const res = await fetch('/api/workspaces');
+      if (res.status === 401) {
+        router.push('/auth/sign-in');
+        return;
+      }
       const data = await res.json();
       setWorkspaces(data.workspaces || []);
     } catch (err) {
       console.error('Errore caricamento workspace:', err);
     }
+  }
+
+  async function fetchMe() {
+    try {
+      const res = await fetch('/api/me');
+      if (res.ok) {
+        const data = await res.json();
+        setUserEmail(data.user?.email || '');
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await fetch('/api/auth/sign-out', { method: 'POST' });
+    } catch {
+      /* ignore */
+    }
+    router.push('/auth/sign-in');
+    router.refresh();
   }
 
   async function handleCreate() {
@@ -89,8 +118,8 @@ export default function WorkspaceSidebar() {
             <FlaskConical size={18} className="text-white" />
           </div>
           <div>
-            <h1 className="text-sm font-bold text-white group-hover:text-violet-300 transition-colors">Financial AI Lab</h1>
-            <p className="text-[10px] text-slate-500">RAG Testing Platform</p>
+            <h1 className="text-sm font-bold text-white group-hover:text-violet-300 transition-colors">Agent Lab</h1>
+            <p className="text-[10px] text-slate-500">Financial RAG Platform</p>
           </div>
         </div>
       </div>
@@ -189,11 +218,27 @@ export default function WorkspaceSidebar() {
         )}
       </div>
 
-      {/* Footer */}
-      <div className="p-4 border-t border-white/5">
-        <p className="text-[10px] text-slate-600 text-center">
-          Powered by DeepSeek v4 Flash
-        </p>
+      {/* Footer: utente */}
+      <div className="p-3 border-t border-white/5">
+        {userEmail ? (
+          <div className="flex items-center gap-2 px-2 py-2 rounded-xl hover:bg-white/5 transition-all">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500/30 to-blue-500/30 flex items-center justify-center flex-shrink-0 text-[11px] font-semibold text-violet-200 uppercase">
+              {userEmail.charAt(0)}
+            </div>
+            <span className="flex-1 min-w-0 text-[12px] text-slate-300 truncate" title={userEmail}>
+              {userEmail}
+            </span>
+            <button
+              onClick={handleLogout}
+              title="Esci"
+              className="w-7 h-7 rounded-lg hover:bg-red-500/20 flex items-center justify-center transition-all"
+            >
+              <LogOut size={14} className="text-slate-500 hover:text-red-400" />
+            </button>
+          </div>
+        ) : (
+          <p className="text-[10px] text-slate-600 text-center py-1">Agent Lab · DeepSeek v4</p>
+        )}
       </div>
     </aside>
   );

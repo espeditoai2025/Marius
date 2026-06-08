@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { getUrls, addUrl, removeUrl, addChunkTexts } from '@/lib/store';
+import { requireWorkspace } from '@/lib/auth/guard';
 import { crawlUrl } from '@/lib/crawler';
 import { chunkText } from '@/lib/chunker';
 import type { ChunkText } from '@/lib/store';
@@ -14,11 +15,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const workspaceId = searchParams.get('workspaceId');
 
-    if (!workspaceId) {
-      return NextResponse.json({ error: 'workspaceId obbligatorio' }, { status: 400 });
-    }
+    const guard = await requireWorkspace(workspaceId);
+    if ('res' in guard) return guard.res;
 
-    const urls = await getUrls(workspaceId);
+    const urls = await getUrls(workspaceId!);
     return NextResponse.json({ urls });
   } catch (error) {
     return NextResponse.json({ error: 'Errore nel recupero degli URL' }, { status: 500 });
@@ -30,9 +30,12 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { workspaceId, url } = body;
 
-    if (!workspaceId || !url) {
+    if (!url) {
       return NextResponse.json({ error: 'Dati mancanti' }, { status: 400 });
     }
+
+    const guard = await requireWorkspace(workspaceId);
+    if ('res' in guard) return guard.res;
 
     // Crawl URL con gestione esplicita degli errori HTTP (come il 403)
     try {
@@ -105,11 +108,14 @@ export async function DELETE(request: NextRequest) {
     const workspaceId = searchParams.get('workspaceId');
     const urlId = searchParams.get('urlId');
 
-    if (!workspaceId || !urlId) {
+    if (!urlId) {
       return NextResponse.json({ error: 'Dati mancanti' }, { status: 400 });
     }
 
-    await removeUrl(workspaceId, urlId);
+    const guard = await requireWorkspace(workspaceId);
+    if ('res' in guard) return guard.res;
+
+    await removeUrl(workspaceId!, urlId);
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: 'Errore nella rimozione dell\'URL' }, { status: 500 });

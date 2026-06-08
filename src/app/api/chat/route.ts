@@ -9,17 +9,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { getChatHistory, addChatMessage, clearChatHistory } from '@/lib/store';
 import { executeRAGPipeline } from '@/lib/rag';
+import { requireWorkspace } from '@/lib/auth/guard';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const workspaceId = searchParams.get('workspaceId');
 
-    if (!workspaceId) {
-      return NextResponse.json({ error: 'workspaceId obbligatorio' }, { status: 400 });
-    }
+    const guard = await requireWorkspace(workspaceId);
+    if ('res' in guard) return guard.res;
 
-    const history = await getChatHistory(workspaceId);
+    const history = await getChatHistory(workspaceId!);
     return NextResponse.json({ history });
   } catch (error) {
     console.error('[API] Errore GET chat:', error);
@@ -32,9 +32,12 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { workspaceId, question } = body;
 
-    if (!workspaceId || !question) {
-      return NextResponse.json({ error: 'workspaceId e question obbligatori' }, { status: 400 });
+    if (!question) {
+      return NextResponse.json({ error: 'question obbligatorio' }, { status: 400 });
     }
+
+    const guard = await requireWorkspace(workspaceId);
+    if ('res' in guard) return guard.res;
 
     // Salva messaggio utente
     const userMessage = {
@@ -77,11 +80,10 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const workspaceId = searchParams.get('workspaceId');
 
-    if (!workspaceId) {
-      return NextResponse.json({ error: 'workspaceId obbligatorio' }, { status: 400 });
-    }
+    const guard = await requireWorkspace(workspaceId);
+    if ('res' in guard) return guard.res;
 
-    await clearChatHistory(workspaceId);
+    await clearChatHistory(workspaceId!);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('[API] Errore DELETE chat:', error);

@@ -4,17 +4,17 @@
 
 import { NextResponse } from 'next/server';
 import { getPrompt, savePrompt } from '@/lib/store';
+import { requireWorkspace } from '@/lib/auth/guard';
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const workspaceId = searchParams.get('workspaceId');
 
-    if (!workspaceId) {
-      return NextResponse.json({ error: 'Workspace ID mancante' }, { status: 400 });
-    }
+    const guard = await requireWorkspace(workspaceId);
+    if ('res' in guard) return guard.res;
 
-    const prompt = await getPrompt(workspaceId);
+    const prompt = await getPrompt(workspaceId!);
     return NextResponse.json({ prompt });
   } catch (error) {
     console.error('[API Prompt GET] Errore:', error);
@@ -27,9 +27,12 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { workspaceId, content, temperature } = body;
 
-    if (!workspaceId || content === undefined) {
+    if (content === undefined) {
       return NextResponse.json({ error: 'Dati mancanti' }, { status: 400 });
     }
+
+    const guard = await requireWorkspace(workspaceId);
+    if ('res' in guard) return guard.res;
 
     try {
       await savePrompt({

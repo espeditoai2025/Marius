@@ -55,7 +55,7 @@ export default function UrlInput({ workspaceId }: UrlInputProps) {
     inFlight.current.add(urlId);
     if (total) setProgress(p => ({ ...p, [urlId]: { done: 0, total } }));
     try {
-      await processIngestion(urlId, 'url', pr =>
+      await processIngestion(urlId, 'url', workspaceId, pr =>
         setProgress(p => ({ ...p, [urlId]: { done: pr.done, total: pr.total } }))
       );
       setUrls(prev => prev.map(u => (u.id === urlId ? { ...u, status: 'ready' } : u)));

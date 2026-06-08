@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { addDocument, addChunkTexts, ChunkText } from '@/lib/store';
+import { requireWorkspace } from '@/lib/auth/guard';
 import { getMimeType } from '@/lib/parser';
 import { chunkText } from '@/lib/chunker';
 import { v4 as uuidv4 } from 'uuid';
@@ -25,6 +26,9 @@ export async function POST(req: NextRequest) {
     if (!file || !workspaceId) {
       return NextResponse.json({ error: 'Dati mancanti' }, { status: 400 });
     }
+
+    const guard = await requireWorkspace(workspaceId);
+    if ('res' in guard) return guard.res;
 
     if (file.size > MAX_FILE_BYTES) {
       return NextResponse.json(
@@ -108,9 +112,10 @@ export async function POST(req: NextRequest) {
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const workspaceId = searchParams.get('workspaceId');
-  if (!workspaceId) return NextResponse.json({ error: 'workspaceId mancante' }, { status: 400 });
+  const guard = await requireWorkspace(workspaceId);
+  if ('res' in guard) return guard.res;
   const { getDocuments } = await import('@/lib/store');
-  const documents = await getDocuments(workspaceId);
+  const documents = await getDocuments(workspaceId!);
   return NextResponse.json({ documents });
 }
 
@@ -118,8 +123,10 @@ export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const workspaceId = searchParams.get('workspaceId');
   const docId = searchParams.get('docId');
-  if (!workspaceId || !docId) return NextResponse.json({ error: 'Dati mancanti' }, { status: 400 });
+  if (!docId) return NextResponse.json({ error: 'Dati mancanti' }, { status: 400 });
+  const guard = await requireWorkspace(workspaceId);
+  if ('res' in guard) return guard.res;
   const { removeDocument } = await import('@/lib/store');
-  await removeDocument(workspaceId, docId);
+  await removeDocument(workspaceId!, docId);
   return NextResponse.json({ success: true });
 }

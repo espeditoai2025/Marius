@@ -13,6 +13,7 @@ export interface Workspace {
   id: string;
   name: string;
   description: string;
+  ownerId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -100,43 +101,51 @@ function parseJson<T>(value: unknown): T | undefined {
 // WORKSPACE CRUD
 // ==========================================
 
-export async function getWorkspaces(): Promise<Workspace[]> {
+export async function getWorkspaces(ownerId: string): Promise<Workspace[]> {
   const rows = await sql`
-    SELECT * FROM workspaces ORDER BY created_at DESC
+    SELECT * FROM workspaces WHERE owner_id = ${ownerId} ORDER BY created_at DESC
   `;
   return rows.map(w => ({
     id: w.id,
     name: w.name,
     description: w.description,
+    ownerId: w.owner_id,
     createdAt: w.created_at,
     updatedAt: w.updated_at,
   }));
 }
 
-export async function getWorkspace(id: string): Promise<Workspace | null> {
-  const rows = await sql`SELECT * FROM workspaces WHERE id = ${id}`;
+export async function getWorkspace(id: string, ownerId: string): Promise<Workspace | null> {
+  const rows = await sql`SELECT * FROM workspaces WHERE id = ${id} AND owner_id = ${ownerId}`;
   const data = rows[0];
   if (!data) return null;
   return {
     id: data.id,
     name: data.name,
     description: data.description,
+    ownerId: data.owner_id,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
   };
 }
 
-export async function createWorkspace(workspace: Workspace): Promise<void> {
+export async function createWorkspace(workspace: Workspace, ownerId: string): Promise<void> {
   await sql`
-    INSERT INTO workspaces (id, name, description, created_at, updated_at)
-    VALUES (${workspace.id}, ${workspace.name}, ${workspace.description},
+    INSERT INTO workspaces (id, name, description, owner_id, created_at, updated_at)
+    VALUES (${workspace.id}, ${workspace.name}, ${workspace.description}, ${ownerId},
             ${workspace.createdAt}, ${workspace.updatedAt})
   `;
 }
 
-export async function deleteWorkspace(id: string): Promise<void> {
+export async function deleteWorkspace(id: string, ownerId: string): Promise<void> {
   // Le tabelle figlie hanno ON DELETE CASCADE, quindi basta eliminare il workspace.
-  await sql`DELETE FROM workspaces WHERE id = ${id}`;
+  await sql`DELETE FROM workspaces WHERE id = ${id} AND owner_id = ${ownerId}`;
+}
+
+/** True se il workspace appartiene all'utente. Da usare per autorizzare le route API. */
+export async function userOwnsWorkspace(workspaceId: string, ownerId: string): Promise<boolean> {
+  const rows = await sql`SELECT 1 FROM workspaces WHERE id = ${workspaceId} AND owner_id = ${ownerId} LIMIT 1`;
+  return rows.length > 0;
 }
 
 // ==========================================

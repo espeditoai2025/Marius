@@ -56,7 +56,7 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
     inFlight.current.add(docId);
     if (total) setProgress(p => ({ ...p, [docId]: { done: 0, total } }));
     try {
-      await processIngestion(docId, 'document', pr =>
+      await processIngestion(docId, 'document', workspaceId, pr =>
         setProgress(p => ({ ...p, [docId]: { done: pr.done, total: pr.total } }))
       );
       setDocuments(prev => prev.map(d => (d.id === docId ? { ...d, status: 'ready' } : d)));

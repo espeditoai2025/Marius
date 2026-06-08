@@ -1,20 +1,18 @@
 /**
- * api/workspaces — Gestione dei workspace
+ * api/workspaces — Gestione dei workspace (scopati per utente proprietario).
  */
 
 import { NextResponse } from 'next/server';
-import { 
-  getWorkspaces, 
-  createWorkspace, 
-  deleteWorkspace, 
-  savePrompt,
-  Workspace 
-} from '@/lib/store';
+import { getWorkspaces, createWorkspace, deleteWorkspace, savePrompt, Workspace } from '@/lib/store';
+import { getUserId } from '@/lib/auth/server';
 import { v4 as uuidv4 } from 'uuid';
 
 export async function GET() {
   try {
-    const workspaces = await getWorkspaces();
+    const userId = await getUserId();
+    if (!userId) return NextResponse.json({ error: 'Non autenticato' }, { status: 401 });
+
+    const workspaces = await getWorkspaces(userId);
     return NextResponse.json({ workspaces });
   } catch (error) {
     console.error('[API Workspaces GET] Errore:', error);
@@ -24,6 +22,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const userId = await getUserId();
+    if (!userId) return NextResponse.json({ error: 'Non autenticato' }, { status: 401 });
+
     const body = await request.json();
     const { name, description } = body;
 
@@ -39,11 +40,10 @@ export async function POST(request: Request) {
       updatedAt: new Date().toISOString(),
     };
 
-    // Salvataggio su DB (Supabase)
     try {
-      await createWorkspace(workspace);
-      
-      // Crea un prompt iniziale per il workspace
+      await createWorkspace(workspace, userId);
+
+      // Prompt iniziale per il workspace
       await savePrompt({
         workspaceId: workspace.id,
         content: 'Sei un assistente AI finanziario esperto. Analizza i dati forniti e rispondi in modo professionale, citando le fonti se disponibili.',
@@ -52,9 +52,9 @@ export async function POST(request: Request) {
       });
     } catch (dbError: any) {
       console.error('[API Workspaces POST] Errore DB:', dbError);
-      return NextResponse.json({ 
-        error: 'Errore salvataggio database', 
-        details: dbError.message || 'Controlla le configurazioni di Supabase (URL/Key) e le RLS policies.' 
+      return NextResponse.json({
+        error: 'Errore salvataggio database',
+        details: dbError.message || 'Controlla la configurazione del database.',
       }, { status: 500 });
     }
 
@@ -67,6 +67,9 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const userId = await getUserId();
+    if (!userId) return NextResponse.json({ error: 'Non autenticato' }, { status: 401 });
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
@@ -74,7 +77,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'ID mancante' }, { status: 400 });
     }
 
-    await deleteWorkspace(id);
+    await deleteWorkspace(id, userId);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('[API Workspaces DELETE] Errore:', error);

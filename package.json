@@ -10,6 +10,7 @@
     "db:setup": "node scripts/apply-schema.mjs"
   },
   "dependencies": {
+    "@neondatabase/auth": "^0.4.2-beta",
     "@neondatabase/serverless": "^1.1.0",
     "cheerio": "^1.2.0",
     "csv-parse": "^6.2.1",
