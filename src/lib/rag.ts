@@ -5,7 +5,7 @@
 
 import { chatCompletion, createEmbedding } from './openrouter';
 import { getPrompt, Source } from './store';
-import { supabase } from './supabase';
+import { sql } from './db';
 
 export interface RAGResult {
   answer: string;
@@ -26,16 +26,26 @@ export async function executeRAGPipeline(
 
   // 2. Genera embedding della domanda
   const queryEmbedding = await createEmbedding(userQuestion);
+  const queryVector = `[${queryEmbedding.join(',')}]`;
 
-  // 3. Cerca i chunk rilevanti (15 pezzi per ampio contesto)
-  const { data: results, error } = await supabase.rpc('match_chunks', {
-    query_embedding: queryEmbedding,
-    match_threshold: 0.1,
-    match_count: 15,
-    p_workspace_id: workspaceId
-  });
-
-  if (error) {
+  // 3. Cerca i chunk rilevanti via pgvector (cosine), 15 pezzi per ampio contesto.
+  //    score = similarità coseno (1 = identico); soglia minima 0.1.
+  let results: Array<Record<string, unknown>> = [];
+  try {
+    results = await sql`
+      SELECT
+        content,
+        source_type,
+        source_name,
+        metadata,
+        1 - (embedding <=> ${queryVector}::vector) AS score
+      FROM chunks
+      WHERE workspace_id = ${workspaceId}
+        AND 1 - (embedding <=> ${queryVector}::vector) > 0.1
+      ORDER BY embedding <=> ${queryVector}::vector
+      LIMIT 15
+    `;
+  } catch (error) {
     console.error('[RAG] Errore ricerca semantica:', error);
   }
 
@@ -50,7 +60,12 @@ export async function executeRAGPipeline(
       relevance: Math.round(r.score * 100) / 100,
     }));
 
-    const sortedResults = [...results].sort((a, b) => (a.metadata?.index || 0) - (b.metadata?.index || 0));
+    // metadata è jsonb: può tornare come oggetto o (raramente) come stringa.
+    const indexOf = (r: Record<string, unknown>): number => {
+      const meta = typeof r.metadata === 'string' ? JSON.parse(r.metadata) : r.metadata;
+      return (meta as { index?: number })?.index ?? 0;
+    };
+    const sortedResults = [...results].sort((a, b) => indexOf(a) - indexOf(b));
 
     contextText = sortedResults
       .map((r: any) => `[DOCUMENTO: ${r.source_name}]\n${r.content}`)
