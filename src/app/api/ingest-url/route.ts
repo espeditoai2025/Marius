@@ -4,11 +4,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
-import { getUrls, addUrl, removeUrl, addChunks } from '@/lib/store';
+import { getUrls, addUrl, removeUrl, addChunkTexts } from '@/lib/store';
 import { crawlUrl } from '@/lib/crawler';
 import { chunkText } from '@/lib/chunker';
-import { createEmbeddingsBatch } from '@/lib/openrouter';
-import type { DocumentChunk } from '@/lib/store';
+import type { ChunkText } from '@/lib/store';
 
 export async function GET(request: NextRequest) {
   try {
@@ -46,36 +45,36 @@ export async function POST(request: NextRequest) {
       // Chunking
       const textChunks = chunkText(crawlResult.content);
       const urlId = uuidv4();
+      const title = crawlResult.title || url;
+      const status = textChunks.length > 0 ? 'processing' : 'ready';
 
-      // Genera embeddings
-      const embeddings = await createEmbeddingsBatch(textChunks);
-
-      // Crea chunk con embeddings
-      const chunks: DocumentChunk[] = textChunks.map((content, i) => ({
-        id: uuidv4(),
-        workspaceId,
-        sourceType: 'url' as const,
-        sourceName: crawlResult.title || url,
-        sourceId: urlId,
-        content,
-        embedding: embeddings[i] || [],
-        metadata: { url, title: crawlResult.title, chunkIndex: String(i) },
-      }));
-
-      // Salva
+      // Salva i metadati URL (stato: processing)
       await addUrl(workspaceId, {
         id: urlId,
         workspaceId,
         url,
-        title: crawlResult.title,
-        chunksCount: chunks.length,
+        title,
+        chunksCount: textChunks.length,
+        status,
         ingestedAt: new Date().toISOString(),
       });
 
-      await addChunks(workspaceId, chunks);
+      // Salva i chunk SENZA embedding (l'embedding avviene dopo, via /api/ingest/process)
+      const chunks: ChunkText[] = textChunks.map((content, i) => ({
+        id: uuidv4(),
+        sourceType: 'url',
+        sourceName: title,
+        sourceId: urlId,
+        content,
+        metadata: { index: i, url, title },
+      }));
+
+      await addChunkTexts(workspaceId, chunks);
 
       return NextResponse.json({
-        url: { id: urlId, url, title: crawlResult.title, chunksCount: chunks.length },
+        url: { id: urlId, url, title, chunksCount: textChunks.length, status },
+        sourceId: urlId,
+        totalChunks: textChunks.length,
       }, { status: 201 });
 
     } catch (crawlError: any) {

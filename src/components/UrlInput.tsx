@@ -1,17 +1,19 @@
 'use client';
 
 /**
- * UrlInput — Componente per l'inserimento e l'indicizzazione di URL web.
+ * UrlInput — Inserimento e indicizzazione asincrona di URL web.
  */
 
-import { useState, useEffect } from 'react';
-import { Globe, Plus, Trash2, Loader2, Link as LinkIcon, X, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Globe, Plus, Trash2, Loader2, Link as LinkIcon, AlertCircle } from 'lucide-react';
+import { processIngestion } from '@/lib/ingestClient';
 
 interface UrlMeta {
   id: string;
   url: string;
   title: string;
   chunksCount: number;
+  status: string; // 'processing' | 'ready' | 'error'
   ingestedAt: string;
 }
 
@@ -24,11 +26,14 @@ export default function UrlInput({ workspaceId }: UrlInputProps) {
   const [inputUrl, setInputUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<{ title: string; details: string } | null>(null);
+  const [progress, setProgress] = useState<Record<string, { done: number; total: number }>>({});
+  const inFlight = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (workspaceId) {
       fetchUrls();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
   async function fetchUrls() {
@@ -36,9 +41,29 @@ export default function UrlInput({ workspaceId }: UrlInputProps) {
       const res = await fetch(`/api/ingest-url?workspaceId=${workspaceId}`);
       if (!res.ok) throw new Error('Errore recupero URL');
       const data = await res.json();
-      setUrls(data.urls || []);
+      const list: UrlMeta[] = data.urls || [];
+      setUrls(list);
+      list.filter(u => u.status === 'processing').forEach(u => runProcessing(u.id));
     } catch (err) {
       console.error('Errore caricamento URL:', err);
+    }
+  }
+
+  /** Indicizzazione a batch di un URL, con aggiornamento del progresso. */
+  async function runProcessing(urlId: string, total?: number) {
+    if (inFlight.current.has(urlId)) return;
+    inFlight.current.add(urlId);
+    if (total) setProgress(p => ({ ...p, [urlId]: { done: 0, total } }));
+    try {
+      await processIngestion(urlId, 'url', pr =>
+        setProgress(p => ({ ...p, [urlId]: { done: pr.done, total: pr.total } }))
+      );
+      setUrls(prev => prev.map(u => (u.id === urlId ? { ...u, status: 'ready' } : u)));
+    } catch (err: any) {
+      setUrls(prev => prev.map(u => (u.id === urlId ? { ...u, status: 'error' } : u)));
+      setError({ title: 'Errore indicizzazione', details: err?.message || 'Indicizzazione non completata.' });
+    } finally {
+      inFlight.current.delete(urlId);
     }
   }
 
@@ -68,17 +93,17 @@ export default function UrlInput({ workspaceId }: UrlInputProps) {
       }
 
       const data = await res.json();
-
       if (!res.ok) {
-        throw new Error(data.details || data.error || 'Errore durante l\'ingestion');
+        throw new Error(data.details || data.error || "Errore durante l'ingestion");
       }
 
-      setUrls(prev => [...prev, data.url]);
+      setUrls(prev => [data.url, ...prev]);
       setInputUrl('');
+      runProcessing(data.sourceId, data.totalChunks);
     } catch (err: any) {
-      setError({ 
-        title: 'Errore Ingestion', 
-        details: err.message || 'Errore sconosciuto durante la lettura del sito.' 
+      setError({
+        title: 'Errore Ingestion',
+        details: err.message || 'Errore sconosciuto durante la lettura del sito.',
       });
     } finally {
       setLoading(false);
@@ -87,12 +112,8 @@ export default function UrlInput({ workspaceId }: UrlInputProps) {
 
   async function handleDelete(urlId: string) {
     if (!confirm('Eliminare questo sito e i relativi dati RAG?')) return;
-
     try {
-      const res = await fetch(`/api/ingest-url?workspaceId=${workspaceId}&urlId=${urlId}`, {
-        method: 'DELETE',
-      });
-
+      const res = await fetch(`/api/ingest-url?workspaceId=${workspaceId}&urlId=${urlId}`, { method: 'DELETE' });
       if (res.ok) {
         setUrls(prev => prev.filter(u => u.id !== urlId));
       }
@@ -140,7 +161,7 @@ export default function UrlInput({ workspaceId }: UrlInputProps) {
               <div className="flex-1">
                 <p className="text-[11px] text-amber-300 font-semibold">{error.title}</p>
                 <p className="text-[10px] text-amber-400/80 leading-normal mt-1">{error.details}</p>
-                <button 
+                <button
                   onClick={() => setError(null)}
                   className="mt-2 text-[10px] text-amber-400/60 hover:text-amber-400 underline underline-offset-2"
                 >
@@ -152,32 +173,53 @@ export default function UrlInput({ workspaceId }: UrlInputProps) {
         </div>
 
         <div className="space-y-2">
-          {urls.map(u => (
-            <div
-              key={u.id}
-              className="group flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] border border-white/5 hover:bg-white/[0.06] transition-all"
-            >
-              <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                <Globe size={16} className="text-amber-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[13px] text-slate-200 font-medium truncate" title={u.title || u.url}>
-                  {u.title || u.url}
-                </p>
-                <div className="flex items-center gap-2 text-[10px] text-slate-500">
-                  <span className="truncate">{u.url}</span>
-                  <span>•</span>
-                  <span className="flex-shrink-0">{u.chunksCount} chunks</span>
-                </div>
-              </div>
-              <button
-                onClick={() => handleDelete(u.id)}
-                className="opacity-0 group-hover:opacity-100 w-8 h-8 rounded-lg hover:bg-red-500/20 flex items-center justify-center transition-all"
+          {urls.map(u => {
+            const prog = progress[u.id];
+            const pct = prog && prog.total > 0 ? Math.round((prog.done / prog.total) * 100) : 0;
+            const isProcessing = u.status === 'processing';
+            const isError = u.status === 'error';
+            return (
+              <div
+                key={u.id}
+                className="group flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] border border-white/5 hover:bg-white/[0.06] transition-all"
               >
-                <Trash2 size={14} className="text-slate-500 hover:text-red-400" />
-              </button>
-            </div>
-          ))}
+                <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                  {isProcessing ? (
+                    <Loader2 size={16} className="text-violet-400 animate-spin" />
+                  ) : (
+                    <Globe size={16} className={isError ? 'text-red-400' : 'text-amber-400'} />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] text-slate-200 font-medium truncate" title={u.title || u.url}>
+                    {u.title || u.url}
+                  </p>
+                  <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                    <span className="truncate">{u.url}</span>
+                    <span>•</span>
+                    {isError ? (
+                      <span className="text-red-400 flex-shrink-0">Errore</span>
+                    ) : isProcessing ? (
+                      <span className="text-violet-300 flex-shrink-0">Indicizzazione… {pct}%</span>
+                    ) : (
+                      <span className="flex-shrink-0">{u.chunksCount} chunks</span>
+                    )}
+                  </div>
+                  {isProcessing && (
+                    <div className="mt-1.5 h-1 rounded-full bg-white/10 overflow-hidden">
+                      <div className="h-full bg-violet-500 transition-all duration-300" style={{ width: `${pct}%` }} />
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => handleDelete(u.id)}
+                  className="opacity-0 group-hover:opacity-100 w-8 h-8 rounded-lg hover:bg-red-500/20 flex items-center justify-center transition-all"
+                >
+                  <Trash2 size={14} className="text-slate-500 hover:text-red-400" />
+                </button>
+              </div>
+            );
+          })}
 
           {urls.length === 0 && !loading && (
             <div className="text-center py-8">

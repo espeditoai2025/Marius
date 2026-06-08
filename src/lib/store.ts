@@ -47,6 +47,7 @@ export interface DocumentMeta {
   mimeType: string;
   size: number;
   chunksCount: number;
+  status: string; // 'processing' | 'ready' | 'error'
   uploadedAt: string;
 }
 
@@ -56,7 +57,18 @@ export interface UrlMeta {
   url: string;
   title: string;
   chunksCount: number;
+  status: string; // 'processing' | 'ready' | 'error'
   ingestedAt: string;
+}
+
+/** Chunk testuale senza embedding (inserito durante l'upload, embeddato dopo). */
+export interface ChunkText {
+  id: string;
+  sourceType: 'document' | 'url';
+  sourceId: string;
+  sourceName: string;
+  content: string;
+  metadata: Record<string, unknown>;
 }
 
 export interface DocumentChunk {
@@ -218,6 +230,7 @@ export async function getDocuments(workspaceId: string): Promise<DocumentMeta[]>
     mimeType: d.mime_type,
     size: Number(d.size),
     chunksCount: d.chunks_count,
+    status: d.status ?? 'ready',
     uploadedAt: d.created_at,
   }));
 }
@@ -227,15 +240,20 @@ export async function getDocuments(workspaceId: string): Promise<DocumentMeta[]>
  */
 export async function addDocument(workspaceId: string, doc: DocumentMeta): Promise<void> {
   await sql`
-    INSERT INTO documents (id, workspace_id, filename, mime_type, size, chunks_count, created_at)
+    INSERT INTO documents (id, workspace_id, filename, mime_type, size, chunks_count, status, created_at)
     VALUES (${doc.id}, ${workspaceId}, ${doc.filename}, ${doc.mimeType},
-            ${doc.size}, ${doc.chunksCount}, ${doc.uploadedAt})
+            ${doc.size}, ${doc.chunksCount}, ${doc.status}, ${doc.uploadedAt})
     ON CONFLICT (id) DO UPDATE SET
       filename = EXCLUDED.filename,
       mime_type = EXCLUDED.mime_type,
       size = EXCLUDED.size,
-      chunks_count = EXCLUDED.chunks_count
+      chunks_count = EXCLUDED.chunks_count,
+      status = EXCLUDED.status
   `;
+}
+
+export async function setDocumentStatus(id: string, status: string): Promise<void> {
+  await sql`UPDATE documents SET status = ${status} WHERE id = ${id}`;
 }
 
 export async function removeDocument(workspaceId: string, docId: string): Promise<void> {
@@ -261,20 +279,26 @@ export async function getUrls(workspaceId: string): Promise<UrlMeta[]> {
     url: u.url,
     title: u.title,
     chunksCount: u.chunks_count,
+    status: u.status ?? 'ready',
     ingestedAt: u.created_at,
   }));
 }
 
 export async function addUrl(workspaceId: string, url: UrlMeta): Promise<void> {
   await sql`
-    INSERT INTO urls (id, workspace_id, url, title, chunks_count, created_at)
+    INSERT INTO urls (id, workspace_id, url, title, chunks_count, status, created_at)
     VALUES (${url.id}, ${workspaceId}, ${url.url}, ${url.title},
-            ${url.chunksCount}, ${url.ingestedAt})
+            ${url.chunksCount}, ${url.status}, ${url.ingestedAt})
     ON CONFLICT (id) DO UPDATE SET
       url = EXCLUDED.url,
       title = EXCLUDED.title,
-      chunks_count = EXCLUDED.chunks_count
+      chunks_count = EXCLUDED.chunks_count,
+      status = EXCLUDED.status
   `;
+}
+
+export async function setUrlStatus(id: string, status: string): Promise<void> {
+  await sql`UPDATE urls SET status = ${status} WHERE id = ${id}`;
 }
 
 export async function removeUrl(workspaceId: string, urlId: string): Promise<void> {
@@ -328,4 +352,80 @@ export async function getChunks(workspaceId: string): Promise<DocumentChunk[]> {
     embedding: parseJson<number[]>(c.embedding) ?? [],
     metadata: parseJson<Record<string, unknown>>(c.metadata) ?? {},
   }));
+}
+
+// ==========================================
+// INGESTIONE ASINCRONA
+// ==========================================
+
+/**
+ * Inserisce i chunk SENZA embedding (embedding = NULL).
+ * Gli embedding vengono generati dopo, a batch, dall'endpoint /api/ingest/process.
+ */
+export async function addChunkTexts(workspaceId: string, chunks: ChunkText[]): Promise<void> {
+  if (chunks.length === 0) return;
+
+  const cols = 7; // id, workspace_id, source_type, source_id, source_name, content, metadata
+  const params: unknown[] = [];
+  const tuples = chunks.map((c, i) => {
+    const b = i * cols;
+    params.push(
+      c.id,
+      workspaceId,
+      c.sourceType,
+      c.sourceId,
+      c.sourceName,
+      c.content,
+      JSON.stringify(c.metadata ?? {})
+    );
+    return `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6}, $${b + 7}::jsonb)`;
+  });
+
+  const query = `
+    INSERT INTO chunks (id, workspace_id, source_type, source_id, source_name, content, metadata)
+    VALUES ${tuples.join(', ')}
+  `;
+  await sql.query(query, params);
+}
+
+/** Ritorna i prossimi chunk ancora privi di embedding per una sorgente. */
+export async function getPendingChunks(sourceId: string, limit: number): Promise<{ id: string; content: string }[]> {
+  const rows = await sql`
+    SELECT id, content FROM chunks
+    WHERE source_id = ${sourceId} AND embedding IS NULL
+    ORDER BY id
+    LIMIT ${limit}
+  `;
+  return rows.map(r => ({ id: r.id, content: r.content }));
+}
+
+/** Aggiorna in blocco gli embedding dei chunk indicati. */
+export async function setChunkEmbeddings(pairs: { id: string; embedding: number[] }[]): Promise<void> {
+  const valid = pairs.filter(p => p.embedding && p.embedding.length > 0);
+  if (valid.length === 0) return;
+
+  const params: unknown[] = [];
+  const values = valid.map((p, i) => {
+    const b = i * 2;
+    params.push(p.id, `[${p.embedding.join(',')}]`);
+    return `($${b + 1}::uuid, $${b + 2}::vector)`;
+  });
+
+  const query = `
+    UPDATE chunks AS c
+    SET embedding = v.emb
+    FROM (VALUES ${values.join(', ')}) AS v(id, emb)
+    WHERE c.id = v.id
+  `;
+  await sql.query(query, params);
+}
+
+/** Conteggio totale e completati (con embedding) per una sorgente. */
+export async function getChunkProgress(sourceId: string): Promise<{ total: number; done: number }> {
+  const rows = await sql`
+    SELECT count(*)::int AS total,
+           count(*) FILTER (WHERE embedding IS NOT NULL)::int AS done
+    FROM chunks WHERE source_id = ${sourceId}
+  `;
+  return { total: rows[0]?.total ?? 0, done: rows[0]?.done ?? 0 };
 }

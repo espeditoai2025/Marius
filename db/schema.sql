@@ -55,9 +55,11 @@ CREATE TABLE IF NOT EXISTS documents (
   mime_type    text,
   size         bigint,
   chunks_count integer NOT NULL DEFAULT 0,
+  status       text NOT NULL DEFAULT 'ready', -- 'processing' | 'ready' | 'error'
   created_at   timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_documents_workspace ON documents(workspace_id);
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'ready';
 
 -- ------------------------------------------------------------
 -- Metadati URL indicizzati
@@ -68,9 +70,11 @@ CREATE TABLE IF NOT EXISTS urls (
   url          text NOT NULL,
   title        text,
   chunks_count integer NOT NULL DEFAULT 0,
+  status       text NOT NULL DEFAULT 'ready', -- 'processing' | 'ready' | 'error'
   created_at   timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_urls_workspace ON urls(workspace_id);
+ALTER TABLE urls ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'ready';
 
 -- ------------------------------------------------------------
 -- Chunk con embedding (1536 dim = text-embedding-3-small)

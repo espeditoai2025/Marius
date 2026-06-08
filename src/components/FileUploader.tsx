@@ -1,11 +1,12 @@
 'use client';
 
 /**
- * FileUploader — Componente per l'upload e la gestione dei documenti.
+ * FileUploader — Upload documenti con indicizzazione asincrona a batch.
  */
 
-import { useState, useEffect } from 'react';
-import { Upload, FileText, Trash2, Loader2, X, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Upload, FileText, Trash2, Loader2, AlertCircle } from 'lucide-react';
+import { processIngestion } from '@/lib/ingestClient';
 
 interface DocumentMeta {
   id: string;
@@ -13,6 +14,7 @@ interface DocumentMeta {
   mimeType: string;
   size: number;
   chunksCount: number;
+  status: string; // 'processing' | 'ready' | 'error'
   uploadedAt: string;
 }
 
@@ -24,11 +26,14 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+  const [progress, setProgress] = useState<Record<string, { done: number; total: number }>>({});
+  const inFlight = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (workspaceId) {
       fetchDocuments();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
   async function fetchDocuments() {
@@ -36,14 +41,36 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
       const res = await fetch(`/api/upload?workspaceId=${workspaceId}`);
       if (!res.ok) throw new Error('Errore nel recupero documenti');
       const data = await res.json();
-      setDocuments(data.documents || []);
+      const docs: DocumentMeta[] = data.documents || [];
+      setDocuments(docs);
+      // Riprende l'indicizzazione di eventuali documenti rimasti "processing".
+      docs.filter(d => d.status === 'processing').forEach(d => runProcessing(d.id));
     } catch (err) {
       console.error('Errore caricamento documenti:', err);
     }
   }
 
+  /** Esegue l'indicizzazione a batch di un documento, aggiornando il progresso. */
+  async function runProcessing(docId: string, total?: number) {
+    if (inFlight.current.has(docId)) return;
+    inFlight.current.add(docId);
+    if (total) setProgress(p => ({ ...p, [docId]: { done: 0, total } }));
+    try {
+      await processIngestion(docId, 'document', pr =>
+        setProgress(p => ({ ...p, [docId]: { done: pr.done, total: pr.total } }))
+      );
+      setDocuments(prev => prev.map(d => (d.id === docId ? { ...d, status: 'ready' } : d)));
+    } catch (err: any) {
+      setDocuments(prev => prev.map(d => (d.id === docId ? { ...d, status: 'error' } : d)));
+      setError(err?.message || "Errore durante l'indicizzazione");
+    } finally {
+      inFlight.current.delete(docId);
+    }
+  }
+
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file || uploading) return;
 
     setUploading(true);
@@ -54,42 +81,34 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
     formData.append('workspaceId', workspaceId);
 
     try {
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      const res = await fetch('/api/upload', { method: 'POST', body: formData });
 
-      // --- Verifica Content-Type come richiesto ---
       const contentType = res.headers.get('content-type');
       if (!contentType?.includes('application/json')) {
         const text = await res.text();
-        throw new Error("La API non ha restituito JSON: " + text.slice(0, 200));
+        throw new Error('La API non ha restituito JSON: ' + text.slice(0, 200));
       }
 
       const data = await res.json();
-
       if (!res.ok) {
-        const errorMsg = data.detail ? `${data.error}\n${data.detail}` : (data.error || 'Errore upload');
-        throw new Error(errorMsg);
+        throw new Error(data.detail ? `${data.error}\n${data.detail}` : data.error || 'Errore upload');
       }
 
-      setDocuments(prev => [...prev, data.document]);
+      // Mostra subito il documento (stato processing), poi avvia l'indicizzazione.
+      setDocuments(prev => [data.document, ...prev]);
+      runProcessing(data.documentId, data.totalChunks);
     } catch (err: any) {
       setError(err instanceof Error ? err.message : 'Errore sconosciuto');
     } finally {
       setUploading(false);
-      e.target.value = '';
+      input.value = '';
     }
   }
 
   async function handleDelete(docId: string) {
     if (!confirm('Eliminare questo documento e i relativi dati RAG?')) return;
-
     try {
-      const res = await fetch(`/api/upload?workspaceId=${workspaceId}&docId=${docId}`, {
-        method: 'DELETE',
-      });
-
+      const res = await fetch(`/api/upload?workspaceId=${workspaceId}&docId=${docId}`, { method: 'DELETE' });
       if (res.ok) {
         setDocuments(prev => prev.filter(d => d.id !== docId));
       }
@@ -130,7 +149,7 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
           {uploading ? (
             <div className="flex flex-col items-center gap-2">
               <Loader2 size={24} className="text-violet-400 animate-spin" />
-              <span className="text-xs text-slate-400 font-medium">Elaborazione...</span>
+              <span className="text-xs text-slate-400 font-medium">Caricamento...</span>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2">
@@ -147,8 +166,8 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
           <div className="px-3 py-4 rounded-xl bg-red-500/10 border border-red-500/20 flex gap-3">
             <AlertCircle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-[11px] text-red-400 leading-normal font-medium">{error}</p>
-              <button 
+              <p className="text-[11px] text-red-400 leading-normal font-medium whitespace-pre-wrap">{error}</p>
+              <button
                 onClick={() => setError('')}
                 className="mt-2 text-[10px] text-red-400/60 hover:text-red-400 underline underline-offset-2"
               >
@@ -159,32 +178,53 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
         )}
 
         <div className="space-y-2">
-          {documents.map(doc => (
-            <div
-              key={doc.id}
-              className="group flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] border border-white/5 hover:bg-white/[0.06] transition-all"
-            >
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
-                <FileText size={16} className="text-emerald-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[13px] text-slate-200 font-medium truncate" title={doc.filename}>
-                  {doc.filename}
-                </p>
-                <div className="flex items-center gap-2 text-[10px] text-slate-500">
-                  <span>{formatSize(doc.size)}</span>
-                  <span>•</span>
-                  <span>{doc.chunksCount} chunks</span>
-                </div>
-              </div>
-              <button
-                onClick={() => handleDelete(doc.id)}
-                className="opacity-0 group-hover:opacity-100 w-8 h-8 rounded-lg hover:bg-red-500/20 flex items-center justify-center transition-all"
+          {documents.map(doc => {
+            const prog = progress[doc.id];
+            const pct = prog && prog.total > 0 ? Math.round((prog.done / prog.total) * 100) : 0;
+            const isProcessing = doc.status === 'processing';
+            const isError = doc.status === 'error';
+            return (
+              <div
+                key={doc.id}
+                className="group flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] border border-white/5 hover:bg-white/[0.06] transition-all"
               >
-                <Trash2 size={14} className="text-slate-500 hover:text-red-400" />
-              </button>
-            </div>
-          ))}
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
+                  {isProcessing ? (
+                    <Loader2 size={16} className="text-violet-400 animate-spin" />
+                  ) : (
+                    <FileText size={16} className={isError ? 'text-red-400' : 'text-emerald-400'} />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] text-slate-200 font-medium truncate" title={doc.filename}>
+                    {doc.filename}
+                  </p>
+                  <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                    <span>{formatSize(doc.size)}</span>
+                    <span>•</span>
+                    {isError ? (
+                      <span className="text-red-400">Errore indicizzazione</span>
+                    ) : isProcessing ? (
+                      <span className="text-violet-300">Indicizzazione… {pct}%</span>
+                    ) : (
+                      <span>{doc.chunksCount} chunks</span>
+                    )}
+                  </div>
+                  {isProcessing && (
+                    <div className="mt-1.5 h-1 rounded-full bg-white/10 overflow-hidden">
+                      <div className="h-full bg-violet-500 transition-all duration-300" style={{ width: `${pct}%` }} />
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => handleDelete(doc.id)}
+                  className="opacity-0 group-hover:opacity-100 w-8 h-8 rounded-lg hover:bg-red-500/20 flex items-center justify-center transition-all"
+                >
+                  <Trash2 size={14} className="text-slate-500 hover:text-red-400" />
+                </button>
+              </div>
+            );
+          })}
 
           {documents.length === 0 && !uploading && (
             <div className="text-center py-8">

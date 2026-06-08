@@ -3,10 +3,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { addDocument, addChunks } from '@/lib/store';
+import { addDocument, addChunkTexts, ChunkText } from '@/lib/store';
 import { getMimeType } from '@/lib/parser';
 import { chunkText } from '@/lib/chunker';
-import { createEmbeddingsBatch } from '@/lib/openrouter';
 import { v4 as uuidv4 } from 'uuid';
 
 export const runtime = 'nodejs';
@@ -40,17 +39,24 @@ export async function POST(req: NextRequest) {
     }
 
     const docId = uuidv4();
+
+    // OTTIMIZZAZIONE TABELLE: chunkSize a 4000 per tenere vicini label e valori
+    const chunks = chunkText(rawText, { chunkSize: 4000, overlap: 600 });
+    // Documento vuoto dopo il chunking → lo salviamo comunque come "ready" senza chunk
+    const status = chunks.length > 0 ? 'processing' : 'ready';
+
     const docMeta = {
       id: docId,
       workspaceId,
       filename: file.name,
       mimeType,
       size: file.size,
-      chunksCount: 0,
+      chunksCount: chunks.length,
+      status,
       uploadedAt: new Date().toISOString(),
     };
 
-    // Salvataggio Metadati
+    // 1. Salva i metadati del documento (stato: processing)
     try {
       await addDocument(workspaceId, docMeta);
     } catch (dbError: any) {
@@ -58,35 +64,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Errore Database (Documenti)', detail: dbError.message }, { status: 500 });
     }
 
-    // OTTIMIZZAZIONE TABELLE: Aumentiamo chunkSize a 4000 per tenere vicini label e valori
-    const chunks = chunkText(rawText, { chunkSize: 4000, overlap: 600 });
-
-    // 1. Generazione Embeddings (AI)
-    let embeddings: number[][] = [];
+    // 2. Salva i chunk SENZA embedding (l'embedding avviene dopo, via /api/ingest/process)
     try {
-      embeddings = await createEmbeddingsBatch(chunks);
-    } catch (aiError: any) {
-      console.error(`[API Upload][${requestId}] Errore AI:`, aiError);
-      return NextResponse.json({ error: 'Errore Generazione AI (OpenRouter)', detail: aiError.message }, { status: 500 });
-    }
-
-    // 2. Salvataggio Chunks (Database)
-    try {
-      const docChunks = chunks.map((content, i) => ({
+      const chunkTexts: ChunkText[] = chunks.map((content, i) => ({
         id: uuidv4(),
-        workspaceId,
-        sourceType: 'document' as const,
+        sourceType: 'document',
         sourceId: docId,
         sourceName: file.name,
         content,
-        embedding: embeddings[i] || [],
         metadata: { index: i },
       }));
 
-      await addChunks(workspaceId, docChunks);
-      await addDocument(workspaceId, { ...docMeta, chunksCount: chunks.length });
+      await addChunkTexts(workspaceId, chunkTexts);
 
-      return NextResponse.json({ success: true, document: { ...docMeta, chunksCount: chunks.length } });
+      // Risposta immediata: il client avvierà l'indicizzazione a batch.
+      return NextResponse.json({
+        success: true,
+        documentId: docId,
+        totalChunks: chunks.length,
+        document: docMeta,
+      });
     } catch (dbError: any) {
       console.error(`[API Upload][${requestId}] Errore DB Chunks:`, dbError);
       return NextResponse.json({ error: 'Errore Salvataggio Database (Chunks)', detail: dbError.message }, { status: 500 });
