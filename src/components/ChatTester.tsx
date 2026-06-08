@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, Loader2, FileText, Globe, Trash2 } from 'lucide-react';
+import { Send, Bot, User, Loader2, FileText, Globe, Trash2, Download } from 'lucide-react';
 import Markdown from './Markdown';
 
 interface Source {
@@ -27,6 +27,37 @@ interface ChatMessage {
 interface ChatTesterProps {
   workspaceId: string;
   onSourcesUpdate?: (sources: Source[]) => void;
+}
+
+// CSS del documento PDF (tema chiaro, tabelle/grassetto leggibili).
+const PRINT_CSS = `
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1a1a1a; margin: 0; padding: 40px; line-height: 1.6; }
+  .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #6d28d9; padding-bottom: 12px; margin-bottom: 22px; }
+  .brand { font-size: 18px; font-weight: 700; color: #6d28d9; }
+  .date { font-size: 12px; color: #666; }
+  .q { background: #f4f4f7; border-left: 3px solid #6d28d9; padding: 10px 14px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; }
+  .q b { color: #6d28d9; }
+  h1 { font-size: 20px; } h2 { font-size: 17px; } h3 { font-size: 15px; color: #4c1d95; }
+  h1, h2, h3 { margin: 18px 0 8px; }
+  p { margin: 8px 0; }
+  strong { font-weight: 700; color: #111; }
+  ul, ol { margin: 8px 0; padding-left: 22px; }
+  li { margin: 3px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+  th, td { border: 1px solid #ddd; padding: 7px 10px; text-align: left; vertical-align: top; }
+  thead th { background: #f4f4f7; font-weight: 700; }
+  code { background: #f0f0f3; padding: 1px 5px; border-radius: 4px; font-family: monospace; font-size: 13px; }
+  pre { background: #f7f7fa; padding: 12px; border-radius: 8px; overflow-x: auto; }
+  blockquote { border-left: 3px solid #ccc; margin: 10px 0; padding-left: 12px; color: #555; }
+  .footer { margin-top: 30px; padding-top: 12px; border-top: 1px solid #eee; font-size: 11px; color: #999; }
+  @media print { body { padding: 0; } }
+`;
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
+  ));
 }
 
 export default function ChatTester({ workspaceId, onSourcesUpdate }: ChatTesterProps) {
@@ -127,6 +158,37 @@ export default function ChatTester({ workspaceId, onSourcesUpdate }: ChatTesterP
     }
   }
 
+  /** Scarica in PDF (via stampa del browser) la SINGOLA risposta dell'agente. */
+  function downloadAnswerPdf(msg: ChatMessage) {
+    const el = document.getElementById(`answer-${msg.id}`);
+    const answerHtml = el ? el.innerHTML : escapeHtml(msg.content);
+
+    const idx = messages.findIndex(m => m.id === msg.id);
+    const question = idx > 0 && messages[idx - 1]?.role === 'user' ? messages[idx - 1].content : '';
+    const date = new Date(msg.timestamp || Date.now()).toLocaleString('it-IT', {
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+    const model = msg.model ? msg.model.split('/').pop() : '';
+
+    const w = window.open('', '_blank', 'width=820,height=920');
+    if (!w) {
+      alert('Abilita i popup per scaricare il PDF.');
+      return;
+    }
+    w.document.write(
+      `<!doctype html><html lang="it"><head><meta charset="utf-8">` +
+      `<title>Risposta — Agent Lab</title><style>${PRINT_CSS}</style></head><body>` +
+      `<div class="header"><span class="brand">Agent Lab</span><span class="date">${date}</span></div>` +
+      (question ? `<div class="q"><b>Domanda:</b> ${escapeHtml(question)}</div>` : '') +
+      `<div class="answer">${answerHtml}</div>` +
+      (model ? `<div class="footer">Risposta generata con il modello ${escapeHtml(model)}</div>` : '') +
+      `</body></html>`
+    );
+    w.document.close();
+    w.focus();
+    setTimeout(() => { try { w.print(); } catch { /* utente ha chiuso */ } }, 350);
+  }
+
   return (
     <div className="rounded-2xl bg-white/[0.03] border border-white/[0.06] flex flex-col h-[500px]">
       {/* Header */}
@@ -179,7 +241,9 @@ export default function ChatTester({ workspaceId, onSourcesUpdate }: ChatTesterP
                 }`}
               >
                 {msg.role === 'assistant' ? (
-                  <Markdown content={msg.content} />
+                  <div id={`answer-${msg.id}`}>
+                    <Markdown content={msg.content} />
+                  </div>
                 ) : (
                   <div className="whitespace-pre-wrap">{msg.content}</div>
                 )}
@@ -206,6 +270,13 @@ export default function ChatTester({ workspaceId, onSourcesUpdate }: ChatTesterP
                       {s.name.slice(0, 30)}
                     </span>
                   ))}
+                  <button
+                    onClick={() => downloadAnswerPdf(msg)}
+                    title="Scarica questa risposta in PDF"
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/5 text-slate-400 text-[10px] hover:bg-white/10 hover:text-white transition-all"
+                  >
+                    <Download size={9} /> PDF
+                  </button>
                 </div>
               )}
             </div>
