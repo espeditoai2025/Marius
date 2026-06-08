@@ -6,17 +6,19 @@ import OpenAI from 'openai';
 
 // Modelli configurati
 export const CHAT_MODEL = 'deepseek/deepseek-v4-flash';
-export const EMBEDDING_MODEL = 'openai/text-embedding-3-small'; // Ritorno definitivo a 1536 dimensioni
+export const EMBEDDING_MODEL = 'text-embedding-3-small'; // OpenAI diretto — 1536 dimensioni
 export const CLEANING_MODEL = 'openai/gpt-4o-mini';
 
 let clientInstance: OpenAI | null = null;
+let embeddingClientInstance: OpenAI | null = null;
 
+// Client OpenRouter — usato per la chat (DeepSeek) e la pulizia testo.
 function getClient() {
   if (!clientInstance) {
     const apiKey = process.env.OPENROUTER_API_KEY;
-    
+
     clientInstance = new OpenAI({
-      apiKey: apiKey || '', 
+      apiKey: apiKey || '',
       baseURL: 'https://openrouter.ai/api/v1/',
       defaultHeaders: {
         'HTTP-Referer': 'https://marius-lab.vercel.app',
@@ -25,6 +27,20 @@ function getClient() {
     });
   }
   return clientInstance;
+}
+
+// Client OpenAI diretto — usato per gli embeddings.
+// OpenRouter non espone l'endpoint /embeddings, quindi usiamo OpenAI direttamente.
+function getEmbeddingClient() {
+  if (!embeddingClientInstance) {
+    const apiKey = process.env.OPENAI_API_KEY;
+
+    embeddingClientInstance = new OpenAI({
+      apiKey: apiKey || '',
+      // baseURL di default = https://api.openai.com/v1
+    });
+  }
+  return embeddingClientInstance;
 }
 
 /**
@@ -63,7 +79,7 @@ export async function chatCompletion(
  */
 export async function createEmbedding(text: string): Promise<number[]> {
   try {
-    const client = getClient();
+    const client = getEmbeddingClient();
     // Pulizia testo per embedding
     const cleanText = text.replace(/\s+/g, ' ').slice(0, 8000);
 
@@ -79,8 +95,8 @@ export async function createEmbedding(text: string): Promise<number[]> {
     return response.data[0].embedding;
   } catch (error: any) {
     const detail = error?.response?.data?.error?.message || error?.message || 'Errore tecnico';
-    console.error(`[OpenRouter] Embedding Error (${EMBEDDING_MODEL}):`, detail);
-    throw new Error(`OpenRouter Embedding (${EMBEDDING_MODEL}): ${detail}`);
+    console.error(`[OpenAI] Embedding Error (${EMBEDDING_MODEL}):`, detail);
+    throw new Error(`OpenAI Embedding (${EMBEDDING_MODEL}): ${detail}`);
   }
 }
 
@@ -96,7 +112,7 @@ export async function createEmbeddingsBatch(texts: string[]): Promise<number[][]
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
     try {
-      const client = getClient();
+      const client = getEmbeddingClient();
       const response = await client.embeddings.create({
         model: EMBEDDING_MODEL,
         input: batch.map(t => t.replace(/\s+/g, ' ').slice(0, 8000)),

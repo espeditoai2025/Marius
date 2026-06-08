@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Send, Bot, User, Loader2, FileText, Globe, Trash2 } from 'lucide-react';
+import Markdown from './Markdown';
 
 interface Source {
   type: 'document' | 'url';
@@ -177,7 +178,11 @@ export default function ChatTester({ workspaceId, onSourcesUpdate }: ChatTesterP
                     : 'bg-white/[0.05] text-slate-200 border border-white/[0.06] rounded-bl-md'
                 }`}
               >
-                <div className="whitespace-pre-wrap">{msg.content}</div>
+                {msg.role === 'assistant' ? (
+                  <Markdown content={msg.content} />
+                ) : (
+                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                )}
               </div>
 
               {/* Fonti e modello */}
