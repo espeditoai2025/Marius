@@ -5,7 +5,7 @@
 import OpenAI from 'openai';
 
 // Modelli configurati
-export const CHAT_MODEL = 'deepseek/deepseek-v4-flash';
+export const CHAT_MODEL = 'deepseek/deepseek-v4-pro';
 export const EMBEDDING_MODEL = 'text-embedding-3-small'; // OpenAI diretto — 1536 dimensioni
 export const CLEANING_MODEL = 'openai/gpt-4o-mini';
 export const JUDGE_MODEL = 'anthropic/claude-sonnet-4.6'; // Giudice per la valutazione (LLM-as-judge)
