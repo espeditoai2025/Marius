@@ -10,6 +10,9 @@ import { v4 as uuidv4 } from 'uuid';
 
 export const runtime = 'nodejs';
 
+// Limite dimensione file (coerente con l'avviso in UI).
+const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+
 export async function POST(req: NextRequest) {
   const requestId = uuidv4().slice(0, 8);
   console.log(`[API Upload][${requestId}] Inizio richiesta...`);
@@ -21,6 +24,13 @@ export async function POST(req: NextRequest) {
 
     if (!file || !workspaceId) {
       return NextResponse.json({ error: 'Dati mancanti' }, { status: 400 });
+    }
+
+    if (file.size > MAX_FILE_BYTES) {
+      return NextResponse.json(
+        { error: `File troppo grande: ${(file.size / 1024 / 1024).toFixed(1)} MB. Limite massimo ${MAX_FILE_BYTES / 1024 / 1024} MB.` },
+        { status: 413 }
+      );
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());

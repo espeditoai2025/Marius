@@ -73,6 +73,12 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
     const file = input.files?.[0];
     if (!file || uploading) return;
 
+    if (file.size > 10 * 1024 * 1024) {
+      setError(`File troppo grande: ${(file.size / 1024 / 1024).toFixed(1)} MB. Limite massimo 10 MB.`);
+      input.value = '';
+      return;
+    }
+
     setUploading(true);
     setError('');
 
