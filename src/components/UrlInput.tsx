@@ -21,9 +21,18 @@ interface UrlInputProps {
   workspaceId: string;
 }
 
+type IngestMode = 'page' | 'section';
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
 export default function UrlInput({ workspaceId }: UrlInputProps) {
   const [urls, setUrls] = useState<UrlMeta[]>([]);
   const [inputUrl, setInputUrl] = useState('');
+  const [mode, setMode] = useState<IngestMode>('page');
+  const [maxPages, setMaxPages] = useState(8);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<{ title: string; details: string } | null>(null);
   const [progress, setProgress] = useState<Record<string, { done: number; total: number }>>({});
@@ -59,9 +68,9 @@ export default function UrlInput({ workspaceId }: UrlInputProps) {
         setProgress(p => ({ ...p, [urlId]: { done: pr.done, total: pr.total } }))
       );
       setUrls(prev => prev.map(u => (u.id === urlId ? { ...u, status: 'ready' } : u)));
-    } catch (err: any) {
+    } catch (err) {
       setUrls(prev => prev.map(u => (u.id === urlId ? { ...u, status: 'error' } : u)));
-      setError({ title: 'Errore indicizzazione', details: err?.message || 'Indicizzazione non completata.' });
+      setError({ title: 'Errore indicizzazione', details: getErrorMessage(err) || 'Indicizzazione non completata.' });
     } finally {
       inFlight.current.delete(urlId);
     }
@@ -84,7 +93,13 @@ export default function UrlInput({ workspaceId }: UrlInputProps) {
       const res = await fetch('/api/ingest-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspaceId, url: inputUrl }),
+        body: JSON.stringify({
+          workspaceId,
+          url: inputUrl,
+          mode,
+          maxPages: mode === 'section' ? maxPages : 1,
+          maxDepth: mode === 'section' ? 2 : 0,
+        }),
       });
 
       const contentType = res.headers.get('content-type');
@@ -100,10 +115,10 @@ export default function UrlInput({ workspaceId }: UrlInputProps) {
       setUrls(prev => [data.url, ...prev]);
       setInputUrl('');
       runProcessing(data.sourceId, data.totalChunks);
-    } catch (err: any) {
+    } catch (err) {
       setError({
         title: 'Errore Ingestion',
-        details: err.message || 'Errore sconosciuto durante la lettura del sito.',
+        details: getErrorMessage(err) || 'Errore sconosciuto durante la lettura del sito.',
       });
     } finally {
       setLoading(false);
@@ -153,6 +168,43 @@ export default function UrlInput({ workspaceId }: UrlInputProps) {
             >
               {loading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
             </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="grid grid-cols-2 p-0.5 rounded-xl bg-white/5 border border-white/10 flex-1">
+              <button
+                type="button"
+                onClick={() => setMode('page')}
+                className={`py-1.5 rounded-lg text-[10px] font-medium transition-all ${
+                  mode === 'page' ? 'bg-amber-500/20 text-amber-300' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Pagina
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('section')}
+                className={`py-1.5 rounded-lg text-[10px] font-medium transition-all ${
+                  mode === 'section' ? 'bg-amber-500/20 text-amber-300' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Sezione
+              </button>
+            </div>
+
+            {mode === 'section' && (
+              <label className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                Pagine
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={maxPages}
+                  onChange={e => setMaxPages(Math.min(20, Math.max(1, Number(e.target.value) || 1)))}
+                  className="w-12 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-slate-200 focus:outline-none focus:border-amber-500/30"
+                />
+              </label>
+            )}
           </div>
 
           {error && (
