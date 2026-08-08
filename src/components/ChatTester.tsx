@@ -168,20 +168,25 @@ export default function ChatTester({ workspaceId, onSourcesUpdate }: ChatTesterP
     const date = new Date(msg.timestamp || Date.now()).toLocaleString('it-IT', {
       day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
     });
-    const model = msg.model ? msg.model.split('/').pop() : '';
 
     const w = window.open('', '_blank', 'width=820,height=920');
     if (!w) {
       alert('Abilita i popup per scaricare il PDF.');
       return;
     }
+    // Il PDF può essere consegnato al cliente finale, che non sa come è stato
+    // prodotto: va marcato come contenuto generato da AI (AI Act, art. 50).
+    // Il <meta> serve alla leggibilità automatica, il footer a quella umana.
     w.document.write(
       `<!doctype html><html lang="it"><head><meta charset="utf-8">` +
+      `<meta name="generator" content="AI-generated">` +
       `<title>Risposta — Agent Lab</title><style>${PRINT_CSS}</style></head><body>` +
       `<div class="header"><span class="brand">Agent Lab</span><span class="date">${date}</span></div>` +
       (question ? `<div class="q"><b>Domanda:</b> ${escapeHtml(question)}</div>` : '') +
       `<div class="answer">${answerHtml}</div>` +
-      (model ? `<div class="footer">Risposta generata con il modello ${escapeHtml(model)}</div>` : '') +
+      `<div class="footer"><b>Contenuto generato da un sistema di intelligenza artificiale</b> ` +
+      `sulla base dei documenti caricati nello spazio di lavoro. ` +
+      `Verificare le informazioni sulle fonti originali prima di ogni uso professionale.</div>` +
       `</body></html>`
     );
     w.document.close();
@@ -334,6 +339,12 @@ export default function ChatTester({ workspaceId, onSourcesUpdate }: ChatTesterP
             {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
           </button>
         </div>
+        {/* Informativa AI Act art. 50: l'utente deve sapere che sta interagendo
+            con un sistema di intelligenza artificiale. */}
+        <p className="mt-2 text-[10px] leading-relaxed text-slate-600">
+          Stai interagendo con un sistema di intelligenza artificiale. Le risposte sono generate
+          dai documenti dello spazio di lavoro e vanno verificate sulle fonti originali.
+        </p>
       </div>
     </div>
   );

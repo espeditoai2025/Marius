@@ -16,6 +16,26 @@ export const JUDGE_MODEL = 'anthropic/claude-opus-5'; // Giudice per la valutazi
 const APP_URL = 'https://marius-omega.vercel.app';
 const APP_TITLE = 'Marius Financial AI';
 
+/**
+ * Endpoint OpenRouter. Impostare OPENROUTER_BASE_URL a
+ * `https://eu.openrouter.ai/api/v1/` per il routing in-region UE
+ * (richiede un contratto enterprise con OpenRouter).
+ */
+const BASE_URL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1/';
+
+/**
+ * Vincoli di routing applicati a ogni richiesta: i documenti dei clienti non
+ * devono finire a provider che li conservano o li usano per addestramento.
+ *   data_collection: 'deny' → esclude i provider che raccolgono dati utente
+ *   zdr: true               → solo endpoint che non conservano i prompt
+ * Sono un OR con le impostazioni a livello di account, che vanno comunque
+ * configurate nella dashboard OpenRouter.
+ */
+const PROVIDER_POLICY = { data_collection: 'deny', zdr: true } as const;
+
+/** Consente di aggiungere il campo `provider`, estensione OpenRouter fuori dallo schema OpenAI. */
+type WithProvider<T> = T & { provider: typeof PROVIDER_POLICY };
+
 let clientInstance: OpenAI | null = null;
 let embeddingClientInstance: OpenAI | null = null;
 
@@ -26,7 +46,7 @@ function getClient() {
 
     clientInstance = new OpenAI({
       apiKey: apiKey || '',
-      baseURL: 'https://openrouter.ai/api/v1/',
+      baseURL: BASE_URL,
       defaultHeaders: {
         'HTTP-Referer': APP_URL,
         'X-Title': APP_TITLE,
@@ -63,12 +83,16 @@ export async function chatCompletion(
 ): Promise<{ content: string; model: string }> {
   try {
     const client = getClient();
-    const response = await client.chat.completions.create({
+    // `provider` non è nello schema OpenAI: il tipo intersezione lo aggiunge
+    // senza cast, e l'SDK inoltra il body così com'è.
+    const params: WithProvider<OpenAI.ChatCompletionCreateParamsNonStreaming> = {
       model: options?.model || CHAT_MODEL,
       messages,
       temperature: options?.temperature ?? 0,
       max_tokens: options?.maxTokens ?? 4096,
-    });
+      provider: PROVIDER_POLICY,
+    };
+    const response = await client.chat.completions.create(params);
 
     return { 
       content: response.choices[0]?.message?.content || '', 
@@ -104,7 +128,7 @@ export async function transcribePdf(
 ): Promise<{ content: string; model: string }> {
   const model = options?.model || CLEANING_MODEL;
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const response = await fetch(`${BASE_URL.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     signal: options?.signal,
     headers: {
@@ -134,6 +158,7 @@ export async function transcribePdf(
       max_tokens: options?.maxTokens ?? 32000,
       // engine 'native': usa la capacità multimodale del modello sulla pagina.
       plugins: [{ id: 'file-parser', pdf: { engine: 'native' } }],
+      provider: PROVIDER_POLICY,
     }),
   });
 
