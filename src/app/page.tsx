@@ -1,54 +1,54 @@
 import Link from "next/link";
 import {
   FlaskConical, ArrowRight, FileSearch, ShieldCheck, Table2, SlidersHorizontal,
-  Gauge, FolderLock, Landmark, Calculator, UserRoundCheck, Upload, MessageSquareQuote,
-  Download, Globe, Check,
+  Gauge, FolderLock, Landmark, Calculator, Upload, MessageSquareQuote,
+  Download, Globe, Check, Clock,
 } from "lucide-react";
 
 export const metadata = {
-  title: "Agent Lab — L'assistente che risponde solo dai tuoi documenti",
+  title: "Agent Lab — Confronta costi e condizioni senza leggere 80 pagine",
   description:
-    "Per banche, studi professionali e consulenti finanziari: carica fogli informativi, contratti e circolari, e ottieni risposte con la fonte sempre citata.",
+    "Per consulenti finanziari indipendenti: carica fogli informativi e contratti, ottieni tabelle di confronto con la fonte sempre citata.",
 };
 
 /* ---------- dati di pagina ---------- */
 
 const CAPABILITIES = [
   {
+    icon: Table2,
+    tint: "text-sky-300 bg-sky-500/10",
+    title: "Legge le tabelle come le vedi tu",
+    desc: "I fogli costi sono griglie: voce a sinistra, importo a destra. Vengono lette mantenendo ogni voce agganciata al suo valore, non come un elenco di numeri scollegati.",
+  },
+  {
     icon: FileSearch,
     tint: "text-violet-300 bg-violet-500/10",
-    title: "Risposte con la fonte citata",
-    desc: "Sotto ogni risposta trovi i documenti da cui è stata ricavata, con l'estratto pertinente. Nessuna affermazione che non puoi risalire alla carta.",
+    title: "Ogni cifra ha la sua fonte",
+    desc: "Sotto ogni risposta trovi il documento da cui arriva, con l'estratto pertinente. Se il cliente ti chiede «da dove viene questo numero», hai la risposta pronta.",
   },
   {
     icon: ShieldCheck,
     tint: "text-emerald-300 bg-emerald-500/10",
     title: "Se il dato non c'è, te lo dice",
-    desc: "L'assistente risponde solo da ciò che gli hai fornito. Quando un'informazione manca lo dichiara, invece di riempire il vuoto con una plausibilità.",
-  },
-  {
-    icon: Table2,
-    tint: "text-sky-300 bg-sky-500/10",
-    title: "Costruito per tabelle e importi",
-    desc: "Legge fogli costi e condizioni economiche mantenendo ogni voce agganciata al suo valore, e restituisce confronti in tabella con gli importi in evidenza.",
+    desc: "L'assistente usa solo i documenti che gli hai dato. Quando un'informazione manca lo dichiara, invece di riempire il vuoto con qualcosa di plausibile.",
   },
   {
     icon: SlidersHorizontal,
     tint: "text-orange-300 bg-orange-500/10",
-    title: "Comportamento su misura",
-    desc: "Scrivi tu le istruzioni: tono, struttura della risposta, cosa mettere sempre in evidenza. Da rigoroso e ripetibile a più discorsivo, con un cursore.",
+    title: "Risponde come scrivi tu",
+    desc: "Decidi struttura, livello di dettaglio e cosa mettere sempre in evidenza. Da rigoroso e ripetibile a più discorsivo, con un cursore.",
   },
   {
     icon: Gauge,
     tint: "text-amber-300 bg-amber-500/10",
-    title: "Qualità misurata, non dichiarata",
-    desc: "Prepara un test set di domande e ottieni un punteggio da 0 a 100 su aderenza alle fonti e correttezza, con lo storico di ogni modifica.",
+    title: "Affidabilità misurata",
+    desc: "Un set di domande di controllo e un punteggio da 0 a 100 su quanto le risposte restano fedeli ai documenti. Sai se puoi fidarti, non lo speri.",
   },
   {
     icon: FolderLock,
     tint: "text-rose-300 bg-rose-500/10",
-    title: "Uno spazio per ogni pratica",
-    desc: "Ogni cliente, mandato o analisi vive in uno spazio separato, con i suoi documenti e le sue regole. Niente si mescola.",
+    title: "Uno spazio per ogni cliente",
+    desc: "Ogni mandato ha i suoi documenti e le sue regole, in uno spazio separato. I documenti di un cliente non entrano mai nelle risposte di un altro.",
   },
 ] as const;
 
@@ -56,58 +56,70 @@ const STEPS = [
   {
     icon: Upload,
     title: "Carica i documenti",
-    desc: "Fogli informativi, contratti, circolari, bilanci, listini. PDF, Word, Excel, CSV — oppure indicizza direttamente una pagina o un'intera sezione di sito.",
+    desc: "Fogli informativi, contratti, prospetti, listini. PDF, Word, Excel, CSV — o indicizza direttamente una pagina di condizioni pubblicate online.",
   },
   {
     icon: SlidersHorizontal,
-    title: "Definisci il comportamento",
-    desc: "Descrivi come deve rispondere: il livello di dettaglio, la struttura, cosa evidenziare sempre. Lo modifichi quando vuoi.",
+    title: "Dai le tue regole",
+    desc: "Scrivi come vuoi le risposte: quali voci evidenziare sempre, che struttura usare, quanto entrare nel dettaglio.",
   },
   {
     icon: MessageSquareQuote,
-    title: "Chiedi in linguaggio naturale",
-    desc: "«Quanto costa il canone mensile? Fammi una tabella con tutte le commissioni.» Ottieni la risposta e le fonti da cui arriva.",
+    title: "Fai la domanda",
+    desc: "«Confronta i costi ricorrenti di questi tre conti e dimmi qual è il più conveniente sotto i 50.000 euro di giacenza.»",
   },
   {
-    icon: Gauge,
-    title: "Verifica e migliora",
-    desc: "Lancia la valutazione, leggi i punteggi, aggiusta istruzioni o documenti e rimisura. Il miglioramento lo vedi in un numero.",
+    icon: Download,
+    title: "Porta il risultato al cliente",
+    desc: "Tabella pronta, fonti in fondo, esportabile in PDF da allegare al fascicolo o consegnare in consulenza.",
   },
 ] as const;
 
-const AUDIENCES = [
+const PLANS = [
   {
-    icon: Landmark,
-    tint: "text-violet-300 bg-violet-500/10",
-    title: "Istituti bancari e finanziari",
-    lead: "Condizioni, compliance e supporto alla rete.",
-    points: [
-      "Confronto immediato fra condizioni economiche di più prodotti",
-      "Risposte uniformi alla rete commerciale, sempre tracciabili alla fonte",
-      "Interrogazione di normativa interna e documentazione di prodotto",
+    name: "Professional",
+    price: "49",
+    tagline: "Per il consulente indipendente",
+    featured: true,
+    features: [
+      "1 utente",
+      "5 spazi di lavoro",
+      "100 documenti al mese",
+      "Domande illimitate",
+      "Esportazione PDF",
+      "Valutazione della qualità",
     ],
+    cta: "Inizia ora",
   },
   {
-    icon: Calculator,
-    tint: "text-emerald-300 bg-emerald-500/10",
-    title: "Studi associati e commercialisti",
-    lead: "Un assistente per pratica, non uno generico.",
-    points: [
-      "Circolari, prassi e documentazione cliente sempre consultabili",
-      "Uno spazio separato per ogni cliente, senza contaminazioni",
-      "Risposte esportabili in PDF da allegare al fascicolo",
+    name: "Studio",
+    price: "149",
+    tagline: "Per studi e team",
+    featured: false,
+    features: [
+      "5 utenti inclusi",
+      "Spazi di lavoro illimitati",
+      "500 documenti al mese",
+      "Domande illimitate",
+      "Esportazione PDF",
+      "Storico valutazioni esteso",
     ],
+    cta: "Inizia ora",
   },
   {
-    icon: UserRoundCheck,
-    tint: "text-sky-300 bg-sky-500/10",
-    title: "Consulenti finanziari indipendenti",
-    lead: "L'analisi che richiedeva ore, in una domanda.",
-    points: [
-      "Estrazione di costi e condizioni da documenti lunghi e complessi",
-      "Confronti fra prodotti pronti da portare al cliente",
-      "Nessuna infrastruttura da gestire: si usa dal browser",
+    name: "Enterprise",
+    price: null,
+    tagline: "Per banche e reti di consulenza",
+    featured: false,
+    features: [
+      "Utenti illimitati",
+      "Volumi su misura",
+      "Accesso unificato (SSO)",
+      "Requisiti di data residency",
+      "Supporto dedicato",
+      "Onboarding assistito",
     ],
+    cta: "Parliamone",
   },
 ] as const;
 
@@ -134,8 +146,8 @@ export default function Landing() {
           <div className="hidden items-center gap-8 md:flex">
             <a href="#funzioni" className="text-sm text-slate-400 transition-colors hover:text-white">Funzioni</a>
             <a href="#come-funziona" className="text-sm text-slate-400 transition-colors hover:text-white">Come funziona</a>
-            <a href="#per-chi" className="text-sm text-slate-400 transition-colors hover:text-white">Per chi</a>
-            <a href="#qualita" className="text-sm text-slate-400 transition-colors hover:text-white">Qualità</a>
+            <a href="#qualita" className="text-sm text-slate-400 transition-colors hover:text-white">Affidabilità</a>
+            <a href="#prezzi" className="text-sm text-slate-400 transition-colors hover:text-white">Prezzi</a>
           </div>
 
           <div className="flex items-center gap-3">
@@ -159,21 +171,21 @@ export default function Landing() {
 
         <div className="relative mx-auto max-w-4xl text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold tracking-wide text-violet-300">
-            Per banche, studi professionali e consulenti finanziari
+            Per consulenti finanziari indipendenti
           </div>
 
           <h1 className="mt-8 text-5xl font-bold leading-[1.1] tracking-tight text-white md:text-6xl">
-            Ogni risposta, ancorata
+            Confronta costi e condizioni
             <br />
             <span className="bg-gradient-to-r from-violet-400 via-blue-400 to-emerald-400 bg-clip-text text-transparent">
-              ai tuoi documenti
+              in minuti, non in serate
             </span>
           </h1>
 
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-slate-400">
-            Carica fogli informativi, contratti, circolari e bilanci. Fai domande in linguaggio
-            naturale e ottieni risposte con la fonte sempre citata — o l&apos;indicazione esplicita
-            che quel dato non è nei documenti.
+            Carica fogli informativi e contratti. Chiedi quanto costa davvero un prodotto e ottieni
+            una tabella di confronto con la fonte citata su ogni cifra — e l&apos;avviso esplicito
+            quando un dato in quei documenti non c&apos;è.
           </p>
 
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
@@ -181,7 +193,7 @@ export default function Landing() {
               href="/auth/sign-up"
               className="group inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 px-7 py-3.5 text-sm font-semibold text-white shadow-xl shadow-violet-600/25 transition-all hover:from-violet-500 hover:to-blue-500"
             >
-              Crea il tuo primo assistente
+              Provalo con un tuo documento
               <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
             </Link>
             <a
@@ -192,7 +204,6 @@ export default function Landing() {
             </a>
           </div>
 
-          {/* formati supportati */}
           <div className="mt-14">
             <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-600">
               Legge i formati con cui lavori già
@@ -213,16 +224,36 @@ export default function Landing() {
 
       {/* ============ IL PROBLEMA ============ */}
       <section className="border-y border-white/5 bg-white/[0.02] px-6 py-20">
-        <div className="mx-auto max-w-4xl text-center">
-          <h2 className="text-2xl font-bold leading-snug text-white md:text-3xl">
-            Un assistente generico inventa. In finanza, questo lo rende inutilizzabile.
-          </h2>
-          <p className="mx-auto mt-5 max-w-2xl leading-relaxed text-slate-400">
-            Un importo sbagliato in una comparazione di costi non è un dettaglio: è una consulenza
-            errata. Agent Lab parte dal vincolo opposto — l&apos;assistente può usare
-            <span className="text-slate-200"> soltanto i documenti che gli hai dato</span>, deve
-            dire da dove viene ogni informazione, e quando un dato non c&apos;è lo dichiara.
-          </p>
+        <div className="mx-auto max-w-4xl">
+          <div className="grid gap-10 md:grid-cols-2">
+            <div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500/10 text-rose-300">
+                <Clock size={19} />
+              </div>
+              <h3 className="mt-5 text-lg font-semibold text-white">
+                Il confronto a mano non scala
+              </h3>
+              <p className="mt-3 leading-relaxed text-slate-400">
+                Tre prodotti da confrontare significano tre fogli informativi da decine di pagine,
+                voci che si chiamano in modo diverso da un istituto all&apos;altro, e condizioni
+                nascoste in nota. È un lavoro da serata, e va rifatto a ogni aggiornamento.
+              </p>
+            </div>
+            <div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10 text-amber-300">
+                <ShieldCheck size={19} />
+              </div>
+              <h3 className="mt-5 text-lg font-semibold text-white">
+                Un assistente generico inventa
+              </h3>
+              <p className="mt-3 leading-relaxed text-slate-400">
+                Un importo sbagliato in una comparazione non è un dettaglio: è una consulenza
+                errata, con il tuo nome sopra. Qui l&apos;assistente può usare
+                <span className="text-slate-200"> soltanto i documenti che gli dai</span>, e ogni
+                cifra resta risalibile alla pagina da cui proviene.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -265,7 +296,7 @@ export default function Landing() {
               Operativo in quattro passaggi
             </h2>
             <p className="mt-4 leading-relaxed text-slate-400">
-              Nessuna configurazione tecnica, nessuna integrazione da far approvare. Si usa dal
+              Nessuna configurazione tecnica, nessuna integrazione con il tuo gestionale. Si usa dal
               browser.
             </p>
           </div>
@@ -290,53 +321,15 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ============ PER CHI ============ */}
-      <section id="per-chi" className="px-6 py-24">
-        <div className="mx-auto max-w-6xl">
-          <div className="max-w-2xl">
-            <p className="text-xs font-semibold uppercase tracking-widest text-sky-400">Per chi</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">
-              Pensato per chi risponde con i numeri
-            </h2>
-          </div>
-
-          <div className="mt-14 grid gap-5 lg:grid-cols-3">
-            {AUDIENCES.map((a) => {
-              const Icon = a.icon;
-              return (
-                <div
-                  key={a.title}
-                  className="flex flex-col rounded-2xl border border-white/5 bg-white/[0.03] p-7 transition-all hover:border-white/10"
-                >
-                  <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${a.tint}`}>
-                    <Icon size={20} />
-                  </div>
-                  <h3 className="mt-5 text-base font-semibold text-white">{a.title}</h3>
-                  <p className="mt-1.5 text-sm text-slate-400">{a.lead}</p>
-                  <ul className="mt-5 space-y-3 border-t border-white/5 pt-5">
-                    {a.points.map((p) => (
-                      <li key={p} className="flex gap-2.5 text-sm leading-relaxed text-slate-500">
-                        <Check size={15} className="mt-0.5 shrink-0 text-emerald-400/70" />
-                        <span>{p}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ============ QUALITÀ MISURABILE ============ */}
-      <section id="qualita" className="border-y border-white/5 bg-white/[0.02] px-6 py-24">
+      {/* ============ AFFIDABILITÀ MISURABILE ============ */}
+      <section id="qualita" className="px-6 py-24">
         <div className="mx-auto grid max-w-6xl items-center gap-14 lg:grid-cols-2">
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-amber-400">
               La differenza
             </p>
             <h2 className="mt-3 text-3xl font-bold leading-snug tracking-tight text-white md:text-4xl">
-              La qualità la misuri.
+              L&apos;affidabilità la misuri.
               <br />
               Non la speri.
             </h2>
@@ -346,15 +339,15 @@ export default function Landing() {
               modifica che hai appena fatto l&apos;ha migliorata o peggiorata.
             </p>
             <p className="mt-4 leading-relaxed text-slate-400">
-              Agent Lab include una valutazione indipendente: prepari un set di domande di
-              controllo, e un valutatore terzo assegna a ogni risposta un punteggio su quanto è
-              fedele ai documenti e quanto è corretta, con un commento sul punto debole.
+              Prepari un set di domande di controllo con le risposte che ti aspetti, e un valutatore
+              indipendente assegna a ogni risposta un punteggio su quanto resta fedele ai documenti
+              e quanto è corretta, con un commento sul punto debole.
             </p>
             <ul className="mt-8 space-y-3">
               {[
                 "Punteggio 0–100 su aderenza alle fonti e correttezza",
                 "Media della sessione e storico di tutte le valutazioni",
-                "Confronta ogni modifica a istruzioni o documenti con un numero",
+                "Ogni modifica confrontata con un numero, non a impressione",
               ].map((t) => (
                 <li key={t} className="flex gap-2.5 text-sm text-slate-400">
                   <Check size={16} className="mt-0.5 shrink-0 text-amber-400/70" />
@@ -416,35 +409,134 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ============ RIASSICURAZIONI ============ */}
-      <section className="px-6 py-24">
-        <div className="mx-auto grid max-w-6xl gap-5 md:grid-cols-3">
-          {[
-            {
-              icon: FolderLock,
-              title: "I tuoi spazi sono privati",
-              desc: "Ogni account vede soltanto i propri spazi di lavoro. I documenti di un cliente non entrano mai nel contesto di un altro.",
-            },
-            {
-              icon: Globe,
-              title: "Anche le fonti pubbliche",
-              desc: "Oltre ai file, puoi indicizzare una pagina o un'intera sezione di sito: condizioni pubblicate, normativa, listini online.",
-            },
-            {
-              icon: Download,
-              title: "Porti via il risultato",
-              desc: "Ogni risposta è esportabile in PDF, pronta da allegare a un fascicolo o da consegnare al cliente.",
-            },
-          ].map((b) => {
-            const Icon = b.icon;
-            return (
-              <div key={b.title} className="rounded-2xl border border-white/5 bg-white/[0.03] p-7">
-                <Icon size={20} className="text-slate-400" />
-                <h3 className="mt-4 text-sm font-semibold text-white">{b.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-slate-500">{b.desc}</p>
+      {/* ============ PREZZI ============ */}
+      <section id="prezzi" className="border-y border-white/5 bg-white/[0.02] px-6 py-24">
+        <div className="mx-auto max-w-6xl">
+          <div className="text-center">
+            <p className="text-xs font-semibold uppercase tracking-widest text-sky-400">Prezzi</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">
+              Un prezzo che rientra in una consulenza
+            </h2>
+            <p className="mx-auto mt-4 max-w-xl leading-relaxed text-slate-400">
+              Il limite è sui documenti che carichi, non sulle domande che fai: l&apos;assistente
+              deve poterlo usare tutti i giorni.
+            </p>
+          </div>
+
+          <div className="mt-14 grid gap-5 lg:grid-cols-3">
+            {PLANS.map((p) => (
+              <div
+                key={p.name}
+                className={`relative flex flex-col rounded-2xl border p-8 ${
+                  p.featured
+                    ? "border-violet-500/40 bg-violet-500/[0.06] shadow-xl shadow-violet-900/20"
+                    : "border-white/5 bg-white/[0.03]"
+                }`}
+              >
+                {p.featured && (
+                  <span className="absolute -top-3 left-8 rounded-full bg-gradient-to-r from-violet-600 to-blue-600 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-white">
+                    Consigliato
+                  </span>
+                )}
+                <h3 className="text-lg font-semibold text-white">{p.name}</h3>
+                <p className="mt-1 text-sm text-slate-500">{p.tagline}</p>
+
+                <div className="mt-6 flex items-baseline gap-1.5">
+                  {p.price ? (
+                    <>
+                      <span className="text-4xl font-bold text-white">€{p.price}</span>
+                      <span className="text-sm text-slate-500">/mese</span>
+                    </>
+                  ) : (
+                    <span className="text-4xl font-bold text-white">Su misura</span>
+                  )}
+                </div>
+
+                <ul className="mt-7 flex-1 space-y-3 border-t border-white/5 pt-6">
+                  {p.features.map((f) => (
+                    <li key={f} className="flex gap-2.5 text-sm text-slate-400">
+                      <Check size={15} className="mt-0.5 shrink-0 text-emerald-400/70" />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <Link
+                  href="/auth/sign-up"
+                  className={`mt-8 rounded-xl px-5 py-3 text-center text-sm font-semibold transition-all ${
+                    p.featured
+                      ? "bg-gradient-to-r from-violet-600 to-blue-600 text-white shadow-lg shadow-violet-600/25 hover:from-violet-500 hover:to-blue-500"
+                      : "border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                  }`}
+                >
+                  {p.cta}
+                </Link>
               </div>
-            );
-          })}
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ============ ALTRI DESTINATARI ============ */}
+      <section className="px-6 py-24">
+        <div className="mx-auto max-w-6xl">
+          <div className="max-w-2xl">
+            <h2 className="text-2xl font-bold tracking-tight text-white md:text-3xl">
+              Funziona anche per chi lavora in struttura
+            </h2>
+          </div>
+
+          <div className="mt-10 grid gap-5 md:grid-cols-2">
+            {[
+              {
+                icon: Calculator,
+                tint: "text-emerald-300 bg-emerald-500/10",
+                title: "Studi associati e commercialisti",
+                desc: "Uno spazio separato per ogni cliente, con la sua documentazione. Le risposte sono esportabili in PDF da allegare al fascicolo.",
+              },
+              {
+                icon: Landmark,
+                tint: "text-violet-300 bg-violet-500/10",
+                title: "Banche e reti di consulenza",
+                desc: "Risposte uniformi alla rete commerciale, sempre risalibili alla documentazione ufficiale di prodotto. Volumi e requisiti su misura.",
+              },
+            ].map((a) => {
+              const Icon = a.icon;
+              return (
+                <div key={a.title} className="rounded-2xl border border-white/5 bg-white/[0.03] p-7">
+                  <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${a.tint}`}>
+                    <Icon size={20} />
+                  </div>
+                  <h3 className="mt-5 text-base font-semibold text-white">{a.title}</h3>
+                  <p className="mt-2.5 text-sm leading-relaxed text-slate-500">{a.desc}</p>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-5 grid gap-5 md:grid-cols-2">
+            {[
+              {
+                icon: Globe,
+                title: "Anche le fonti pubbliche",
+                desc: "Oltre ai file, puoi indicizzare una pagina o un'intera sezione di sito: condizioni pubblicate, listini online, documentazione di prodotto.",
+              },
+              {
+                icon: FolderLock,
+                title: "I tuoi spazi restano privati",
+                desc: "Ogni account vede soltanto i propri spazi di lavoro. I documenti di un cliente non entrano mai nel contesto di un altro.",
+              },
+            ].map((b) => {
+              const Icon = b.icon;
+              return (
+                <div key={b.title} className="rounded-2xl border border-white/5 bg-white/[0.03] p-7">
+                  <Icon size={20} className="text-slate-400" />
+                  <h3 className="mt-4 text-sm font-semibold text-white">{b.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-500">{b.desc}</p>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </section>
 
@@ -453,11 +545,11 @@ export default function Landing() {
         <div className="pointer-events-none absolute left-1/2 top-0 h-[400px] w-[800px] -translate-x-1/2 rounded-full bg-violet-600/10 blur-[130px]" />
         <div className="relative mx-auto max-w-3xl rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.06] to-white/[0.02] px-8 py-16 text-center">
           <h2 className="text-3xl font-bold tracking-tight text-white md:text-4xl">
-            Prova con un tuo documento
+            Prova con il prossimo confronto che devi fare
           </h2>
           <p className="mx-auto mt-4 max-w-xl leading-relaxed text-slate-400">
-            Carica un foglio informativo o un contratto, fai la domanda che faresti a un collega, e
-            valuta la risposta con le fonti alla mano.
+            Carica i fogli informativi che hai già sulla scrivania, fai la domanda che faresti a un
+            collega, e verifica la risposta con le fonti alla mano.
           </p>
           <Link
             href="/auth/sign-up"
@@ -486,6 +578,7 @@ export default function Landing() {
           </div>
           <div className="flex items-center gap-7 text-xs text-slate-500">
             <Link href="/guida" className="transition-colors hover:text-slate-300">Guida</Link>
+            <a href="#prezzi" className="transition-colors hover:text-slate-300">Prezzi</a>
             <Link href="/auth/sign-in" className="transition-colors hover:text-slate-300">Accedi</Link>
             <Link href="/auth/sign-up" className="transition-colors hover:text-slate-300">Registrati</Link>
           </div>
