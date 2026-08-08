@@ -7,8 +7,14 @@ import OpenAI from 'openai';
 // Modelli configurati
 export const CHAT_MODEL = 'deepseek/deepseek-v4-pro';
 export const EMBEDDING_MODEL = 'text-embedding-3-small'; // OpenAI diretto — 1536 dimensioni
-export const CLEANING_MODEL = 'openai/gpt-4o-mini';
-export const JUDGE_MODEL = 'anthropic/claude-sonnet-4.6'; // Giudice per la valutazione (LLM-as-judge)
+// Trascrizione del PDF nativo: il modello legge il layout della pagina, quindi
+// ricostruisce le tabelle davvero invece di indovinarle dal testo già appiattito.
+export const CLEANING_MODEL = 'google/gemini-3.5-flash-lite';
+export const JUDGE_MODEL = 'anthropic/claude-opus-5'; // Giudice per la valutazione (LLM-as-judge)
+
+// Header di attribuzione OpenRouter, condivisi dal client SDK e da transcribePdf.
+const APP_URL = 'https://marius-omega.vercel.app';
+const APP_TITLE = 'Marius Financial AI';
 
 let clientInstance: OpenAI | null = null;
 let embeddingClientInstance: OpenAI | null = null;
@@ -22,8 +28,8 @@ function getClient() {
       apiKey: apiKey || '',
       baseURL: 'https://openrouter.ai/api/v1/',
       defaultHeaders: {
-        'HTTP-Referer': 'https://marius-lab.vercel.app',
-        'X-Title': 'Marius Financial AI',
+        'HTTP-Referer': APP_URL,
+        'X-Title': APP_TITLE,
       },
     });
   }
@@ -73,6 +79,77 @@ export async function chatCompletion(
     console.error('[OpenRouter] Chat Error:', msg);
     throw new Error(msg);
   }
+}
+
+const TRANSCRIBE_PROMPT = `Trascrivi FEDELMENTE questo documento in Markdown.
+Regole tassative:
+- Riproduci le tabelle come tabelle Markdown, associando ogni voce al SUO valore secondo il layout visivo della pagina.
+- Non riassumere, non commentare, non aggiungere né omettere righe.
+- Non alterare alcun numero, importo, percentuale o data.
+- Rimuovi solo intestazioni/piè di pagina ripetuti e numeri di pagina.
+Restituisci esclusivamente il Markdown, senza preamboli.`;
+
+/**
+ * Trascrive un PDF in Markdown mandando il file nativo al modello multimodale.
+ *
+ * A differenza di una pulizia sul testo già estratto, qui il modello vede la
+ * pagina: nei fogli costi bancari le colonne restano associate alla voce giusta.
+ * Usa `fetch` diretto perché `plugins` è un'estensione OpenRouter fuori dallo
+ * schema OpenAI.
+ */
+export async function transcribePdf(
+  pdf: Buffer,
+  filename: string,
+  options?: { model?: string; maxTokens?: number; signal?: AbortSignal }
+): Promise<{ content: string; model: string }> {
+  const model = options?.model || CLEANING_MODEL;
+
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    signal: options?.signal,
+    headers: {
+      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY || ''}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': APP_URL,
+      'X-Title': APP_TITLE,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: TRANSCRIBE_PROMPT },
+            {
+              type: 'file',
+              file: {
+                filename,
+                file_data: `data:application/pdf;base64,${pdf.toString('base64')}`,
+              },
+            },
+          ],
+        },
+      ],
+      temperature: 0,
+      max_tokens: options?.maxTokens ?? 32000,
+      // engine 'native': usa la capacità multimodale del modello sulla pagina.
+      plugins: [{ id: 'file-parser', pdf: { engine: 'native' } }],
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || data?.error) {
+    const detail = data?.error?.message || `HTTP ${response.status}`;
+    throw new Error(`Trascrizione PDF (${model}): ${detail}`);
+  }
+
+  const content = data?.choices?.[0]?.message?.content;
+  if (!content || !content.trim()) {
+    throw new Error(`Trascrizione PDF (${model}): risposta vuota`);
+  }
+
+  return { content, model: data.model || model };
 }
 
 /**

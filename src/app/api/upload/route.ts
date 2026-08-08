@@ -10,6 +10,10 @@ import { chunkText } from '@/lib/chunker';
 import { v4 as uuidv4 } from 'uuid';
 
 export const runtime = 'nodejs';
+// La trascrizione del PDF è una sola chiamata al modello, ma su documenti lunghi
+// può richiedere decine di secondi: serve più del default. L'embedding resta
+// asincrono a batch (/api/ingest/process), quindi il costo qui è limitato.
+export const maxDuration = 60;
 
 // Limite dimensione file (coerente con l'avviso in UI).
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -40,25 +44,28 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const mimeType = getMimeType(file.name);
     
-    const { parseDocument } = await import('@/lib/parser');
-    let rawText = '';
+    const { extractDocumentText } = await import('@/lib/parser');
+    let extracted;
     try {
-      rawText = await parseDocument(buffer, mimeType);
+      // Per i PDF tenta la trascrizione del file nativo e ricade sul testo
+      // grezzo da sola: solleva solo se non c'è proprio nulla di leggibile.
+      extracted = await extractDocumentText(buffer, mimeType, file.name);
     } catch (parseError: any) {
       return NextResponse.json({ error: 'Errore lettura file', detail: parseError.message }, { status: 500 });
     }
 
-    if (!rawText || rawText.trim().length === 0) {
+    if (!extracted.text || extracted.text.trim().length === 0) {
       return NextResponse.json({ error: 'Documento vuoto o non leggibile' }, { status: 400 });
     }
 
     const docId = uuidv4();
 
-    // OTTIMIZZAZIONE TABELLE: chunkSize a 4000 per tenere vicini label e valori
-    const chunks = chunkText(rawText, { chunkSize: 4000, overlap: 600 });
+    // chunkSize a 4000 per tenere insieme le tabelle (voce e valore nello stesso chunk)
+    const chunks = chunkText(extracted.text, { chunkSize: 4000, overlap: 600 });
     // Documento vuoto dopo il chunking → lo salviamo comunque come "ready" senza chunk
     const status = chunks.length > 0 ? 'processing' : 'ready';
 
+    // Restituito al client: senza raw_text, che resta solo a DB per diagnosi.
     const docMeta = {
       id: docId,
       workspaceId,
@@ -68,11 +75,13 @@ export async function POST(req: NextRequest) {
       chunksCount: chunks.length,
       status,
       uploadedAt: new Date().toISOString(),
+      extraction: extracted.extraction,
+      extractionModel: extracted.model,
     };
 
     // 1. Salva i metadati del documento (stato: processing)
     try {
-      await addDocument(workspaceId, docMeta);
+      await addDocument(workspaceId, { ...docMeta, rawText: extracted.raw || undefined });
     } catch (dbError: any) {
       console.error(`[API Upload][${requestId}] Errore DB Documenti:`, dbError);
       return NextResponse.json({ error: 'Errore Database (Documenti)', detail: dbError.message }, { status: 500 });

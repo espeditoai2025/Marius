@@ -5,7 +5,7 @@
 
 import mammoth from 'mammoth';
 import { parse as csvParse } from 'csv-parse/sync';
-import { chatCompletion, CLEANING_MODEL } from './openrouter';
+import { transcribePdf } from './openrouter';
 
 /**
  * Estrazione testo da PDF usando unpdf.
@@ -65,41 +65,71 @@ export async function parseDocument(
   }
 }
 
+export interface ExtractionResult {
+  /** Testo da indicizzare: la trascrizione se riuscita, altrimenti il grezzo. */
+  text: string;
+  /** Testo grezzo dell'estrattore locale (vuoto se il PDF non ne contiene). */
+  raw: string;
+  /** Metodo effettivamente usato per `text`. */
+  extraction: 'raw' | 'ai';
+  /** Modello usato, solo quando extraction === 'ai'. */
+  model?: string;
+}
+
+// Oltre questa soglia il PDF non viene mandato al modello: il payload base64
+// e i tempi di risposta non stanno nel budget della singola richiesta.
+const MAX_TRANSCRIBE_BYTES = 6 * 1024 * 1024;
+// Margine sotto maxDuration della route, così un modello lento non la fa scadere.
+const TRANSCRIBE_TIMEOUT_MS = 45_000;
+
 /**
- * Pulisce il testo usando gpt-4o-mini.
- * Per documenti molto grandi, pulisce solo i blocchi iniziali per non eccedere i limiti.
+ * Ricava il testo migliore ottenibile da un documento.
+ *
+ * Per i PDF tenta la trascrizione del file nativo (il modello vede il layout,
+ * quindi le tabelle costi restano associate alla voce giusta) e ricade sul
+ * testo grezzo a ogni errore: la trascrizione è un miglioramento opportunistico,
+ * non un punto di rottura dell'ingestione.
  */
-export async function cleanTextWithAI(rawText: string): Promise<string> {
-  // Se il testo è mastodontico (> 100k caratteri), la pulizia AI di tutto il testo 
-  // rischierebbe di fallire o metterci troppo. Puliamo solo se ragionevole.
-  if (rawText.length > 200000) {
-    console.warn('[Parser] Documento troppo grande per pulizia AI integrale. Procedo con testo grezzo.');
-    return rawText;
+export async function extractDocumentText(
+  buffer: Buffer,
+  mimeType: string,
+  filename: string
+): Promise<ExtractionResult> {
+  // Il testo grezzo è sempre il piano B, anche quando l'estrattore locale fallisce
+  // (tipico dei PDF scansionati, dove però la trascrizione visiva funziona).
+  let raw = '';
+  let rawError: unknown = null;
+  try {
+    raw = await parseDocument(buffer, mimeType);
+  } catch (error) {
+    rawError = error;
+  }
+
+  if (mimeType !== 'application/pdf') {
+    if (rawError) throw rawError;
+    return { text: raw, raw, extraction: 'raw' };
+  }
+
+  if (buffer.byteLength > MAX_TRANSCRIBE_BYTES) {
+    console.warn(
+      `[Parser] PDF da ${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB: oltre il limite di trascrizione, uso il testo grezzo.`
+    );
+    if (rawError) throw rawError;
+    return { text: raw, raw, extraction: 'raw' };
   }
 
   try {
-    console.log(`[Parser] Avvio pulizia AI per ${rawText.length} caratteri...`);
-    
-    // Per gpt-4o-mini possiamo pulire fino a ~50k caratteri in una volta sola in modo sicuro
-    const textToClean = rawText.slice(0, 50000); 
-
-    const { content } = await chatCompletion([
-      { role: 'system', content: 'Sei un assistente esperto in analisi di documenti bancari e finanziari. Il tuo compito è pulire il testo estratto da un PDF, rimuovendo intestazioni ripetitive, numeri di pagina e rumore. Formatta il contenuto in Markdown pulito mantenendo tabelle e dati numerici.' },
-      { role: 'user', content: `Pulisci e formatta questo testo: \n\n${textToClean}` }
-    ], { 
-      model: CLEANING_MODEL,
-      temperature: 0
+    const { content, model } = await transcribePdf(buffer, filename, {
+      signal: AbortSignal.timeout(TRANSCRIBE_TIMEOUT_MS),
     });
-
-    // Se abbiamo troncato il testo per la pulizia, aggiungiamo il resto del testo grezzo
-    if (rawText.length > 50000) {
-      return content + "\n\n" + rawText.slice(50000);
-    }
-
-    return content;
+    console.log(`[Parser] Trascrizione PDF completata (${model}). Caratteri: ${content.length} (grezzo: ${raw.length}).`);
+    return { text: content, raw, extraction: 'ai', model };
   } catch (error) {
-    console.warn('[Parser] Pulizia AI fallita, uso testo grezzo:', error);
-    return rawText;
+    const detail = error instanceof Error ? error.message : String(error);
+    console.warn(`[Parser] Trascrizione PDF fallita, uso il testo grezzo: ${detail}`);
+    // Nessuna trascrizione e nessun testo estraibile: qui l'errore è reale.
+    if (rawError) throw rawError;
+    return { text: raw, raw, extraction: 'raw' };
   }
 }
 

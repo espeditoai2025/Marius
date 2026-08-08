@@ -65,6 +65,15 @@ CREATE TABLE IF NOT EXISTS documents (
 CREATE INDEX IF NOT EXISTS idx_documents_workspace ON documents(workspace_id);
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'ready';
 
+-- Tracciamento dell'estrazione testo (per diagnosi e confronto A/B tra modelli).
+--   'raw' = testo grezzo di unpdf/mammoth/csv
+--   'ai'  = trascrizione del PDF nativo via modello multimodale
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS extraction text NOT NULL DEFAULT 'raw';
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS extraction_model text;
+-- Testo grezzo conservato accanto al trascritto: un errore di trascrizione
+-- resta diagnosticabile senza dover ricaricare il documento.
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS raw_text text;
+
 -- ------------------------------------------------------------
 -- Metadati URL indicizzati
 -- ------------------------------------------------------------
@@ -121,6 +130,9 @@ CREATE TABLE IF NOT EXISTS eval_runs (
   created_at   timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_eval_runs_workspace ON eval_runs(workspace_id);
+-- Giudice usato per la run: senza questo lo storico non è confrontabile
+-- quando il modello del giudice cambia.
+ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS judge_model text;
 
 CREATE TABLE IF NOT EXISTS eval_results (
   id           uuid PRIMARY KEY,

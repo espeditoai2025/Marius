@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createEvalRun, getEvalQuestions } from '@/lib/store';
 import { requireWorkspace } from '@/lib/auth/guard';
+import { JUDGE_MODEL } from '@/lib/openrouter';
 import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(request: NextRequest) {
@@ -20,7 +21,8 @@ export async function POST(request: NextRequest) {
   }
 
   const runId = uuidv4();
-  await createEvalRun(workspaceId, runId, questions.length);
+  // Registra il giudice: senza, lo storico non è confrontabile fra modelli diversi.
+  await createEvalRun(workspaceId, runId, questions.length, JUDGE_MODEL);
 
   return NextResponse.json({
     runId,

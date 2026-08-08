@@ -67,7 +67,7 @@ export async function judgeAnswer(params: {
       { role: 'system', content: SYSTEM },
       { role: 'user', content: user },
     ],
-    { model: JUDGE_MODEL, temperature: 0, maxTokens: 700 }
+    { model: JUDGE_MODEL, temperature: 0, maxTokens: 2000 }
   );
 
   return parseJudge(content);

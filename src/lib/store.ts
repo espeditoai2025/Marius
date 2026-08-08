@@ -50,6 +50,10 @@ export interface DocumentMeta {
   chunksCount: number;
   status: string; // 'processing' | 'ready' | 'error'
   uploadedAt: string;
+  extraction?: 'raw' | 'ai'; // come è stato ricavato il testo indicizzato
+  extractionModel?: string;  // modello di trascrizione, se extraction === 'ai'
+  /** Testo grezzo conservato per diagnosi. Scritto in fase di upload, mai riletto in lista. */
+  rawText?: string;
 }
 
 export interface UrlMeta {
@@ -227,8 +231,12 @@ export async function clearChatHistory(workspaceId: string): Promise<void> {
 // ==========================================
 
 export async function getDocuments(workspaceId: string): Promise<DocumentMeta[]> {
+  // Colonne esplicite: raw_text può pesare centinaia di KB per documento e non
+  // serve in lista, quindi non va né letto dal DB né spedito al browser.
   const rows = await sql`
-    SELECT * FROM documents
+    SELECT id, workspace_id, filename, mime_type, size, chunks_count,
+           status, created_at, extraction, extraction_model
+    FROM documents
     WHERE workspace_id = ${workspaceId}
     ORDER BY created_at DESC
   `;
@@ -241,6 +249,8 @@ export async function getDocuments(workspaceId: string): Promise<DocumentMeta[]>
     chunksCount: d.chunks_count,
     status: d.status ?? 'ready',
     uploadedAt: d.created_at,
+    extraction: (d.extraction ?? 'raw') as 'raw' | 'ai',
+    extractionModel: d.extraction_model ?? undefined,
   }));
 }
 
@@ -249,15 +259,20 @@ export async function getDocuments(workspaceId: string): Promise<DocumentMeta[]>
  */
 export async function addDocument(workspaceId: string, doc: DocumentMeta): Promise<void> {
   await sql`
-    INSERT INTO documents (id, workspace_id, filename, mime_type, size, chunks_count, status, created_at)
+    INSERT INTO documents (id, workspace_id, filename, mime_type, size, chunks_count,
+                           status, created_at, extraction, extraction_model, raw_text)
     VALUES (${doc.id}, ${workspaceId}, ${doc.filename}, ${doc.mimeType},
-            ${doc.size}, ${doc.chunksCount}, ${doc.status}, ${doc.uploadedAt})
+            ${doc.size}, ${doc.chunksCount}, ${doc.status}, ${doc.uploadedAt},
+            ${doc.extraction ?? 'raw'}, ${doc.extractionModel ?? null}, ${doc.rawText ?? null})
     ON CONFLICT (id) DO UPDATE SET
       filename = EXCLUDED.filename,
       mime_type = EXCLUDED.mime_type,
       size = EXCLUDED.size,
       chunks_count = EXCLUDED.chunks_count,
-      status = EXCLUDED.status
+      status = EXCLUDED.status,
+      extraction = EXCLUDED.extraction,
+      extraction_model = EXCLUDED.extraction_model,
+      raw_text = EXCLUDED.raw_text
   `;
 }
 
@@ -458,6 +473,8 @@ export interface EvalRun {
   avgScore: number | null;
   total: number;
   createdAt: string;
+  /** Giudice usato: i punteggi sono confrontabili solo fra run dello stesso modello. */
+  judgeModel?: string;
 }
 
 export interface EvalResultRow {
@@ -505,10 +522,15 @@ export async function removeEvalQuestion(workspaceId: string, questionId: string
   await sql`DELETE FROM eval_questions WHERE id = ${questionId} AND workspace_id = ${workspaceId}`;
 }
 
-export async function createEvalRun(workspaceId: string, runId: string, total: number): Promise<void> {
+export async function createEvalRun(
+  workspaceId: string,
+  runId: string,
+  total: number,
+  judgeModel: string
+): Promise<void> {
   await sql`
-    INSERT INTO eval_runs (id, workspace_id, status, total)
-    VALUES (${runId}, ${workspaceId}, 'running', ${total})
+    INSERT INTO eval_runs (id, workspace_id, status, total, judge_model)
+    VALUES (${runId}, ${workspaceId}, 'running', ${total}, ${judgeModel})
   `;
 }
 
@@ -543,5 +565,6 @@ export async function getEvalRuns(workspaceId: string, limit = 10): Promise<Eval
     avgScore: r.avg_score,
     total: r.total,
     createdAt: r.created_at,
+    judgeModel: r.judge_model ?? undefined,
   }));
 }

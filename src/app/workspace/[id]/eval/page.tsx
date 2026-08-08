@@ -16,7 +16,7 @@ interface Result {
   id: string; question: string; answer: string;
   score: number; groundedness: number; correctness: number; feedback: string; sourcesCount?: number;
 }
-interface Run { id: string; status: string; avgScore: number | null; total: number; createdAt: string }
+interface Run { id: string; status: string; avgScore: number | null; total: number; createdAt: string; judgeModel?: string }
 
 function scoreColor(s: number) {
   if (s >= 80) return 'text-emerald-400';
@@ -243,6 +243,13 @@ export default function EvalPage({ params }: { params: Promise<{ id: string }> }
                     <span className="text-slate-500">
                       {new Date(r.createdAt).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                       <span className="text-slate-600"> · {r.total} dom.</span>
+                      {/* Il giudice qualifica il punteggio: run con giudici diversi non sono confrontabili. */}
+                      <span
+                        className="text-slate-600"
+                        title={r.judgeModel ? `Giudice: ${r.judgeModel}` : 'Giudice non registrato (run precedente al tracciamento)'}
+                      >
+                        {' · '}{r.judgeModel ? r.judgeModel.split('/').pop() : 'giudice n/d'}
+                      </span>
                     </span>
                     <span className={`font-semibold ${scoreColor(r.avgScore ?? 0)}`}>{r.avgScore ?? 0}/100</span>
                   </div>

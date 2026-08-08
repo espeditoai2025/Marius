@@ -16,6 +16,8 @@ interface DocumentMeta {
   chunksCount: number;
   status: string; // 'processing' | 'ready' | 'error'
   uploadedAt: string;
+  extraction?: 'raw' | 'ai'; // 'ai' = tabelle ricostruite dal PDF nativo
+  extractionModel?: string;
 }
 
 interface FileUploaderProps {
@@ -213,7 +215,20 @@ export default function FileUploader({ workspaceId }: FileUploaderProps) {
                     ) : isProcessing ? (
                       <span className="text-violet-300">Indicizzazione… {pct}%</span>
                     ) : (
-                      <span>{doc.chunksCount} chunks</span>
+                      <>
+                        <span>{doc.chunksCount} chunks</span>
+                        {doc.extraction === 'ai' && (
+                          <>
+                            <span>•</span>
+                            <span
+                              className="text-sky-400"
+                              title={`Tabelle ricostruite dal PDF nativo${doc.extractionModel ? ` (${doc.extractionModel})` : ''}`}
+                            >
+                              trascritto
+                            </span>
+                          </>
+                        )}
+                      </>
                     )}
                   </div>
                   {isProcessing && (
