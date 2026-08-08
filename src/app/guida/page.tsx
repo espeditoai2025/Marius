@@ -20,7 +20,7 @@ export default function GuidaPage() {
             <span className="text-sm font-bold text-white group-hover:text-violet-300 transition-colors">Agent Lab</span>
           </Link>
           <Link
-            href="/"
+            href="/workspace"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-xs font-medium hover:bg-white/10 transition-all"
           >
             Vai all&apos;app <ArrowRight size={14} />

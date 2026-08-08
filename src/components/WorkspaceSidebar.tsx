@@ -101,7 +101,7 @@ export default function WorkspaceSidebar() {
     try {
       await fetch(`/api/workspaces?id=${id}`, { method: 'DELETE' });
       setWorkspaces(prev => prev.filter(w => w.id !== id));
-      if (activeId === id) router.push('/');
+      if (activeId === id) router.push('/workspace');
     } catch (err) {
       console.error('Errore eliminazione workspace:', err);
     }
@@ -113,7 +113,7 @@ export default function WorkspaceSidebar() {
       <div className="p-5 border-b border-white/5">
         <div
           className="flex items-center gap-3 cursor-pointer group"
-          onClick={() => router.push('/')}
+          onClick={() => router.push('/workspace')}
         >
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-blue-500 flex items-center justify-center shadow-lg shadow-violet-500/20">
             <FlaskConical size={18} className="text-white" />
@@ -244,7 +244,7 @@ export default function WorkspaceSidebar() {
             </button>
           </div>
         ) : (
-          <p className="text-[10px] text-slate-600 text-center py-1">Agent Lab · DeepSeek v4</p>
+          <p className="text-[10px] text-slate-600 text-center py-1">Agent Lab · Financial Intelligence</p>
         )}
       </div>
     </aside>

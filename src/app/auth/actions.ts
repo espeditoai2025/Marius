@@ -16,7 +16,7 @@ export async function signInAction(_prev: AuthState, formData: FormData): Promis
   const { error } = await auth.signIn.email({ email, password });
   if (error) return { error: error.message || 'Credenziali non valide.' };
 
-  redirect('/');
+  redirect('/workspace');
 }
 
 export async function signUpAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
@@ -29,5 +29,5 @@ export async function signUpAction(_prev: AuthState, formData: FormData): Promis
   const { error } = await auth.signUp.email({ email, name: name || email, password });
   if (error) return { error: error.message || 'Registrazione fallita.' };
 
-  redirect('/');
+  redirect('/workspace');
 }

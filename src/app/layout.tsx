@@ -5,8 +5,9 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Financial AI Lab | RAG Notebook",
-  description: "Piattaforma di testing per agenti AI finanziari con RAG",
+  title: "Agent Lab | Financial Intelligence Platform",
+  description:
+    "Per banche, studi professionali e consulenti finanziari: risposte ancorate ai tuoi documenti, con la fonte sempre citata.",
 };
 
 export default function RootLayout({
