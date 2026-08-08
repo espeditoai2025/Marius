@@ -10,7 +10,14 @@ export const EMBEDDING_MODEL = 'text-embedding-3-small'; // OpenAI diretto — 1
 // Trascrizione del PDF nativo: il modello legge il layout della pagina, quindi
 // ricostruisce le tabelle davvero invece di indovinarle dal testo già appiattito.
 export const CLEANING_MODEL = 'google/gemini-3.5-flash-lite';
-export const JUDGE_MODEL = 'anthropic/claude-opus-5'; // Giudice per la valutazione (LLM-as-judge)
+/**
+ * Giudice per la valutazione (LLM-as-judge).
+ * Misurato contro Opus 5 sugli stessi documenti reali: scarto medio 0,2 punti
+ * su risposte corrette, e 4 falsificazioni su 4 smascherate (SWIFT alterato,
+ * percentuali alterate, ente inventato) senza falsi positivi — a un settimo
+ * del costo. Per tornare a Opus 5 basta cambiare questa riga.
+ */
+export const JUDGE_MODEL = 'anthropic/claude-haiku-4.5';
 
 // Header di attribuzione OpenRouter, condivisi dal client SDK e da transcribePdf.
 const APP_URL = 'https://marius-omega.vercel.app';

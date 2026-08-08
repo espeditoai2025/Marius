@@ -31,11 +31,12 @@ export async function POST(request: NextRequest) {
     // 1. Risposta dell'agente (stessa pipeline della chat)
     const rag = await executeRAGPipeline(workspaceId, q.question);
 
-    // 2. Giudizio (Claude)
+    // 2. Giudizio (Claude) — riceve il contesto ridotto: gli serve l'evidenza
+    //    citata, non l'intero recupero.
     const judge = await judgeAnswer({
       question: q.question,
       answer: rag.answer,
-      context: rag.context,
+      context: rag.judgeContext,
       expected: q.expected,
     });
 
